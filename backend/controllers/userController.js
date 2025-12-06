@@ -67,7 +67,7 @@ class UserController {
   // Tạo người dùng mới
   static async create(req, res) {
     try {
-      const { ten_zalo, sdt, so_diem, la_admin, mat_khau } = req.body
+      const { ten_zalo, sdt, so_diem, la_admin, mat_khau, thong_tin_xe } = req.body
 
       if (!ten_zalo || !mat_khau) {
         return res.status(400).json({
@@ -90,7 +90,8 @@ class UserController {
         sdt: sdt || null,
         so_diem: so_diem || 0,
         la_admin: la_admin || false,
-        mat_khau // Lưu raw password
+        mat_khau, // Lưu raw password
+        thong_tin_xe: thong_tin_xe || null
       })
 
       res.status(201).json({
@@ -157,7 +158,8 @@ class UserController {
           sdt: user.sdt || null,
           so_diem: user.so_diem || 0,
           la_admin: user.la_admin || false,
-          mat_khau: user.mat_khau // Lưu raw password
+          mat_khau: user.mat_khau, // Lưu raw password
+          thong_tin_xe: user.thong_tin_xe || null
         }))
       )
 
@@ -183,7 +185,7 @@ class UserController {
   static async update(req, res) {
     try {
       const { id } = req.params
-      const { ten_zalo, sdt, so_diem, la_admin, mat_khau } = req.body
+      const { ten_zalo, sdt, so_diem, la_admin, mat_khau, thong_tin_xe } = req.body
 
       const existingUser = await UserModel.getById(id)
       if (!existingUser) {
@@ -209,7 +211,8 @@ class UserController {
         sdt,
         so_diem,
         la_admin,
-        mat_khau // Lưu raw password nếu có
+        mat_khau, // Lưu raw password nếu có
+        thong_tin_xe
       })
 
       res.json({

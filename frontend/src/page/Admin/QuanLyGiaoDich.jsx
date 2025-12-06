@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { transactionAPI, userAPI } from '../../service/api'
 
 const QuanLyGiaoDich = () => {
@@ -10,10 +10,47 @@ const QuanLyGiaoDich = () => {
   const [loadingUsers, setLoadingUsers] = useState(true)
   const [loadingAllTransactions, setLoadingAllTransactions] = useState(false)
   const [error, setError] = useState('')
-  const [showModal, setShowModal] = useState(false)
-  const [selectedLoaiGiaoDich, setSelectedLoaiGiaoDich] = useState('')
-  const [activeTab, setActiveTab] = useState('single') // 'single' or 'multiple'
+  const [mainTab, setMainTab] = useState('create') // 'create' or 'list'
   const [submitting, setSubmitting] = useState(false)
+  
+  // State cho modal sửa giao dịch
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editingTransaction, setEditingTransaction] = useState(null)
+  const [editForm, setEditForm] = useState({
+    id_nguoi_gui: '',
+    id_nguoi_nhan: '',
+    id_loai_giao_dich: '',
+    so_diem_giao_dich: '',
+    noi_dung_giao_dich: ''
+  })
+  
+  // Form tạo giao dịch - mảng các giao dịch
+  const [transactionRows, setTransactionRows] = useState([
+    {
+      id: 1,
+      id_nguoi_gui: '',
+      id_nguoi_nhan: '',
+      id_loai_giao_dich: '',
+      so_diem_giao_dich: '',
+      noi_dung_giao_dich: ''
+    }
+  ])
+  
+  // Textarea cho parse tin nhắn
+  const [giaoLichText, setGiaoLichText] = useState('')
+  const [sanDiemText, setSanDiemText] = useState('')
+  
+  // Refs cho debounce timers
+  const giaoLichTimerRef = useRef(null)
+  const sanDiemTimerRef = useRef(null)
+  
+  // Lưu lại các text đã parse để tránh parse lại (dùng Set để lưu nhiều text)
+  const parsedGiaoLichTextsRef = useRef(new Set())
+  const parsedSanDiemTextsRef = useRef(new Set())
+  
+  // Flag để bỏ qua onChange khi vừa paste xong
+  const isPastingGiaoLichRef = useRef(false)
+  const isPastingSanDiemRef = useRef(false)
   
   // Filters
   const [filterLoaiGiaoDich, setFilterLoaiGiaoDich] = useState('all') // 'all', '1', '2', '3'
@@ -28,16 +65,6 @@ const QuanLyGiaoDich = () => {
     totalPages: 0
   })
   
-  // Form tạo một giao dịch
-  const [singleTransactionForm, setSingleTransactionForm] = useState({
-    id_nguoi_gui: '',
-    id_nguoi_nhan: '',
-    so_diem_giao_dich: '',
-    noi_dung_giao_dich: ''
-  })
-  
-  // Form tạo nhiều giao dịch
-  const [multipleTransactionsText, setMultipleTransactionsText] = useState('')
 
   // Loại giao dịch (chỉ hiển thị 2 loại)
   const loaiGiaoDichOptions = [
@@ -181,13 +208,381 @@ const QuanLyGiaoDich = () => {
     }
   }
 
-  const handleSingleTransactionChange = (e) => {
-    const { name, value } = e.target
-    setSingleTransactionForm({
-      ...singleTransactionForm,
-      [name]: value
-    })
+  // Xử lý thay đổi trong một hàng
+  const handleRowChange = (rowId, field, value) => {
+    setTransactionRows(rows => 
+      rows.map(row => 
+        row.id === rowId ? { ...row, [field]: value } : row
+      )
+    )
   }
+
+  // Thêm hàng mới
+  const handleAddRow = () => {
+    const newId = Math.max(...transactionRows.map(r => r.id), 0) + 1
+    setTransactionRows([...transactionRows, {
+      id: newId,
+      id_nguoi_gui: '',
+      id_nguoi_nhan: '',
+      id_loai_giao_dich: '',
+      so_diem_giao_dich: '',
+      noi_dung_giao_dich: ''
+    }])
+  }
+
+  // Xóa hàng
+  const handleRemoveRow = (rowId) => {
+    if (transactionRows.length > 1) {
+      setTransactionRows(rows => rows.filter(row => row.id !== rowId))
+    }
+  }
+
+  // Helper function để kiểm tra xem text có chứa text đã parse không
+  const isTextAlreadyParsed = (text, parsedTextsSet) => {
+    if (!text || !text.trim()) return false
+    
+    // Chuẩn hóa text để so sánh
+    const normalizedText = text.trim().replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n+/g, '\n').replace(/\s+/g, ' ').trim()
+    
+    // Kiểm tra exact match
+    if (parsedTextsSet.has(normalizedText)) {
+      return true
+    }
+    
+    // Kiểm tra xem text có chứa bất kỳ text đã parse nào không (substring check)
+    for (const parsedText of parsedTextsSet) {
+      // Nếu text đã parse là substring của text hiện tại (sau khi normalize)
+      if (normalizedText.includes(parsedText) && parsedText.length > 20) {
+        return true
+      }
+      // Hoặc ngược lại, nếu text hiện tại là substring của text đã parse
+      if (parsedText.includes(normalizedText) && normalizedText.length > 20) {
+        return true
+      }
+    }
+    
+    return false
+  }
+
+  // Parse và điền dữ liệu từ textarea Giao lịch (chỉ khi paste hoặc blur)
+  const parseGiaoLichText = (text, pastedTextOnly = null) => {
+    if (!text || !text.trim()) return
+    
+    // Nếu có pastedTextOnly, chỉ parse phần text được paste
+    const textToParse = pastedTextOnly || text
+    
+    // Kiểm tra xem text này đã được parse chưa
+    if (isTextAlreadyParsed(textToParse, parsedGiaoLichTextsRef.current)) {
+      console.log('Text đã được parse rồi, bỏ qua:', textToParse.substring(0, 50))
+      return // Đã parse rồi, không parse lại
+    }
+    
+    const parsed = parseChatMessages(textToParse)
+    if (parsed.length > 0) {
+      // Chuẩn hóa text để lưu
+      const normalizedText = textToParse.trim().replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n+/g, '\n').replace(/\s+/g, ' ').trim()
+      
+      // Đánh dấu đã parse text này
+      parsedGiaoLichTextsRef.current.add(normalizedText)
+      console.log('Đã parse và lưu text:', normalizedText.substring(0, 50))
+      
+      // Kiểm tra xem hàng đầu tiên có trống không
+      const firstRow = transactionRows[0]
+      const isFirstRowEmpty = !firstRow.id_nguoi_gui && !firstRow.id_nguoi_nhan && !firstRow.id_loai_giao_dich && !firstRow.so_diem_giao_dich
+      
+      if (isFirstRowEmpty && parsed.length > 0) {
+        // Nếu hàng đầu trống, điền giao dịch đầu tiên vào hàng đầu
+        const firstTx = parsed[0]
+        const remainingTxs = parsed.slice(1) // Các giao dịch còn lại
+        
+        setTransactionRows(rows => {
+          // Điền giao dịch đầu tiên vào hàng đầu
+          const updatedRows = rows.map((row, index) => 
+            index === 0 ? {
+              ...row,
+              id_nguoi_gui: firstTx.id_nguoi_gui.toString(),
+              id_nguoi_nhan: firstTx.id_nguoi_nhan.toString(),
+              id_loai_giao_dich: '2', // ID của "Giao lịch"
+              so_diem_giao_dich: firstTx.so_diem_giao_dich.toString(),
+              noi_dung_giao_dich: firstTx.noi_dung_giao_dich || ''
+            } : row
+          )
+          
+          // Nếu còn giao dịch khác, tạo hàng mới cho chúng
+          if (remainingTxs.length > 0) {
+            const maxId = rows.length > 0 ? Math.max(...rows.map(r => r.id), 0) : 0
+            const newRows = remainingTxs.map((tx, index) => ({
+              id: maxId + index + 1,
+              id_nguoi_gui: tx.id_nguoi_gui.toString(),
+              id_nguoi_nhan: tx.id_nguoi_nhan.toString(),
+              id_loai_giao_dich: '2', // ID của "Giao lịch"
+              so_diem_giao_dich: tx.so_diem_giao_dich.toString(),
+              noi_dung_giao_dich: tx.noi_dung_giao_dich || ''
+            }))
+            return [...updatedRows, ...newRows]
+          }
+          
+          return updatedRows
+        })
+      } else {
+        // Nếu hàng đầu không trống, tạo hàng mới cho tất cả giao dịch
+        setTransactionRows(rows => {
+          const maxId = rows.length > 0 ? Math.max(...rows.map(r => r.id), 0) : 0
+          const newRows = parsed.map((tx, index) => ({
+            id: maxId + index + 1,
+            id_nguoi_gui: tx.id_nguoi_gui.toString(),
+            id_nguoi_nhan: tx.id_nguoi_nhan.toString(),
+            id_loai_giao_dich: '2', // ID của "Giao lịch"
+            so_diem_giao_dich: tx.so_diem_giao_dich.toString(),
+            noi_dung_giao_dich: tx.noi_dung_giao_dich || ''
+          }))
+          
+          // Thêm vào cuối danh sách
+          return [...rows, ...newRows]
+        })
+      }
+    }
+  }
+
+  // Parse và điền dữ liệu từ textarea San điểm (chỉ khi paste hoặc blur)
+  const parseSanDiemText = (text, pastedTextOnly = null) => {
+    if (!text || !text.trim()) return
+    
+    // Nếu có pastedTextOnly, chỉ parse phần text được paste
+    const textToParse = pastedTextOnly || text
+    
+    // Kiểm tra xem text này đã được parse chưa
+    if (isTextAlreadyParsed(textToParse, parsedSanDiemTextsRef.current)) {
+      console.log('Text đã được parse rồi, bỏ qua:', textToParse.substring(0, 50))
+      return // Đã parse rồi, không parse lại
+    }
+    
+    const parsed = parseSanDiemMessages(textToParse)
+    if (parsed.length > 0) {
+      // Chuẩn hóa text để lưu
+      const normalizedText = textToParse.trim().replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n+/g, '\n').replace(/\s+/g, ' ').trim()
+      
+      // Đánh dấu đã parse text này
+      parsedSanDiemTextsRef.current.add(normalizedText)
+      console.log('Đã parse và lưu text:', normalizedText.substring(0, 50))
+      
+      // Kiểm tra xem hàng đầu tiên có trống không
+      const firstRow = transactionRows[0]
+      const isFirstRowEmpty = !firstRow.id_nguoi_gui && !firstRow.id_nguoi_nhan && !firstRow.id_loai_giao_dich && !firstRow.so_diem_giao_dich
+      
+      if (isFirstRowEmpty && parsed.length > 0) {
+        // Nếu hàng đầu trống, điền giao dịch đầu tiên vào hàng đầu
+        const firstTx = parsed[0]
+        const remainingTxs = parsed.slice(1) // Các giao dịch còn lại
+        
+        setTransactionRows(rows => {
+          // Điền giao dịch đầu tiên vào hàng đầu
+          const updatedRows = rows.map((row, index) => 
+            index === 0 ? {
+              ...row,
+              id_nguoi_gui: firstTx.id_nguoi_gui.toString(),
+              id_nguoi_nhan: firstTx.id_nguoi_nhan.toString(),
+              id_loai_giao_dich: '1', // ID của "San điểm"
+              so_diem_giao_dich: firstTx.so_diem_giao_dich.toString(),
+              noi_dung_giao_dich: firstTx.noi_dung_giao_dich || ''
+            } : row
+          )
+          
+          // Nếu còn giao dịch khác, tạo hàng mới cho chúng
+          if (remainingTxs.length > 0) {
+            const maxId = rows.length > 0 ? Math.max(...rows.map(r => r.id), 0) : 0
+            const newRows = remainingTxs.map((tx, index) => ({
+              id: maxId + index + 1,
+              id_nguoi_gui: tx.id_nguoi_gui.toString(),
+              id_nguoi_nhan: tx.id_nguoi_nhan.toString(),
+              id_loai_giao_dich: '1', // ID của "San điểm"
+              so_diem_giao_dich: tx.so_diem_giao_dich.toString(),
+              noi_dung_giao_dich: tx.noi_dung_giao_dich || ''
+            }))
+            return [...updatedRows, ...newRows]
+          }
+          
+          return updatedRows
+        })
+      } else {
+        // Nếu hàng đầu không trống, tạo hàng mới cho tất cả giao dịch
+        setTransactionRows(rows => {
+          const maxId = rows.length > 0 ? Math.max(...rows.map(r => r.id), 0) : 0
+          const newRows = parsed.map((tx, index) => ({
+            id: maxId + index + 1,
+            id_nguoi_gui: tx.id_nguoi_gui.toString(),
+            id_nguoi_nhan: tx.id_nguoi_nhan.toString(),
+            id_loai_giao_dich: '1', // ID của "San điểm"
+            so_diem_giao_dich: tx.so_diem_giao_dich.toString(),
+            noi_dung_giao_dich: tx.noi_dung_giao_dich || ''
+          }))
+          
+          // Thêm vào cuối danh sách
+          return [...rows, ...newRows]
+        })
+      }
+    }
+  }
+
+  // Cập nhật text và parse sau khi người dùng ngừng gõ (debounce)
+  const handleGiaoLichTextChange = (text) => {
+    setGiaoLichText(text)
+    
+    // Nếu đang paste, bỏ qua onChange để tránh parse lại
+    if (isPastingGiaoLichRef.current) {
+      return
+    }
+    
+    // Clear timer cũ
+    if (giaoLichTimerRef.current) {
+      clearTimeout(giaoLichTimerRef.current)
+    }
+    
+    // Chỉ parse nếu text có nội dung hợp lệ
+    const trimmedText = text.trim()
+    if (!trimmedText || trimmedText.length < 20) return
+    
+    // Kiểm tra xem có chứa pattern của tin nhắn chat không
+    const hasTimestamp = /\[\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}:\d{2}\]/.test(text)
+    const hasMention = /@/.test(text)
+    
+    if (!hasTimestamp && !hasMention) return
+    
+    // Kiểm tra xem text này đã được parse chưa (dùng helper function)
+    if (isTextAlreadyParsed(text, parsedGiaoLichTextsRef.current)) {
+      return
+    }
+    
+    // Parse sau 800ms khi người dùng ngừng gõ
+    giaoLichTimerRef.current = setTimeout(() => {
+      parseGiaoLichText(text)
+    }, 800)
+  }
+
+  // Cập nhật text và parse sau khi người dùng ngừng gõ (debounce)
+  const handleSanDiemTextChange = (text) => {
+    setSanDiemText(text)
+    
+    // Nếu đang paste, bỏ qua onChange để tránh parse lại
+    if (isPastingSanDiemRef.current) {
+      return
+    }
+    
+    // Clear timer cũ
+    if (sanDiemTimerRef.current) {
+      clearTimeout(sanDiemTimerRef.current)
+    }
+    
+    // Chỉ parse nếu text có nội dung hợp lệ
+    const trimmedText = text.trim()
+    if (!trimmedText || trimmedText.length < 10) return
+    
+    // Kiểm tra xem có chứa từ "san" hoặc "@" không
+    const hasSan = /\bsan\b/i.test(text)
+    const hasMention = /@/.test(text)
+    
+    if (!hasSan && !hasMention) return
+    
+    // Kiểm tra xem text này đã được parse chưa (dùng helper function)
+    if (isTextAlreadyParsed(text, parsedSanDiemTextsRef.current)) {
+      return
+    }
+    
+    // Parse sau 800ms khi người dùng ngừng gõ
+    sanDiemTimerRef.current = setTimeout(() => {
+      parseSanDiemText(text)
+    }, 800)
+  }
+
+  // Parse ngay khi paste vào textarea Giao lịch
+  const handleGiaoLichPaste = (e) => {
+    // Clear timer nếu có
+    if (giaoLichTimerRef.current) {
+      clearTimeout(giaoLichTimerRef.current)
+    }
+    
+    // Đánh dấu đang paste để bỏ qua onChange
+    isPastingGiaoLichRef.current = true
+    
+    // Lấy clipboard data
+    const pastedText = (e.clipboardData || window.clipboardData).getData('text')
+    if (pastedText && pastedText.trim()) {
+      // Chỉ parse phần text được paste, không parse lại toàn bộ textarea
+      // Điều này tránh việc parse lại text đã parse trước đó
+      setTimeout(() => {
+        parseGiaoLichText(pastedText, pastedText)
+        // Sau khi parse xong, reset flag sau một khoảng thời gian để onChange có thể hoạt động lại
+        setTimeout(() => {
+          isPastingGiaoLichRef.current = false
+        }, 500)
+      }, 50)
+    } else {
+      // Nếu không có text để parse, reset flag ngay
+      setTimeout(() => {
+        isPastingGiaoLichRef.current = false
+      }, 100)
+    }
+  }
+
+  // Parse ngay khi paste vào textarea San điểm
+  const handleSanDiemPaste = (e) => {
+    // Clear timer nếu có
+    if (sanDiemTimerRef.current) {
+      clearTimeout(sanDiemTimerRef.current)
+    }
+    
+    // Đánh dấu đang paste để bỏ qua onChange
+    isPastingSanDiemRef.current = true
+    
+    // Lấy clipboard data
+    const pastedText = (e.clipboardData || window.clipboardData).getData('text')
+    if (pastedText && pastedText.trim()) {
+      // Chỉ parse phần text được paste, không parse lại toàn bộ textarea
+      // Điều này tránh việc parse lại text đã parse trước đó
+      setTimeout(() => {
+        parseSanDiemText(pastedText, pastedText)
+        // Sau khi parse xong, reset flag sau một khoảng thời gian để onChange có thể hoạt động lại
+        setTimeout(() => {
+          isPastingSanDiemRef.current = false
+        }, 500)
+      }, 50)
+    } else {
+      // Nếu không có text để parse, reset flag ngay
+      setTimeout(() => {
+        isPastingSanDiemRef.current = false
+      }, 100)
+    }
+  }
+
+  // Parse khi blur (rời khỏi textarea) Giao lịch
+  const handleGiaoLichBlur = () => {
+    // Clear timer nếu có
+    if (giaoLichTimerRef.current) {
+      clearTimeout(giaoLichTimerRef.current)
+    }
+    parseGiaoLichText(giaoLichText)
+  }
+
+  // Parse khi blur (rời khỏi textarea) San điểm
+  const handleSanDiemBlur = () => {
+    // Clear timer nếu có
+    if (sanDiemTimerRef.current) {
+      clearTimeout(sanDiemTimerRef.current)
+    }
+    parseSanDiemText(sanDiemText)
+  }
+  
+  // Cleanup timers khi component unmount
+  useEffect(() => {
+    return () => {
+      if (giaoLichTimerRef.current) {
+        clearTimeout(giaoLichTimerRef.current)
+      }
+      if (sanDiemTimerRef.current) {
+        clearTimeout(sanDiemTimerRef.current)
+      }
+    }
+  }, [])
 
   const handleSingleTransactionSubmit = async (e) => {
     e.preventDefault()
@@ -225,6 +620,65 @@ const QuanLyGiaoDich = () => {
     } catch (err) {
       setError(err.message || 'Không thể tạo giao dịch')
       console.error('Create transaction error:', err)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // Submit tất cả các giao dịch
+  const handleSubmitAll = async (e) => {
+    e.preventDefault()
+    
+    // Validate tất cả các hàng
+    const validRows = transactionRows.filter(row => 
+      row.id_nguoi_gui && 
+      row.id_nguoi_nhan && 
+      row.id_loai_giao_dich && 
+      row.so_diem_giao_dich
+    )
+    
+    if (validRows.length === 0) {
+      setError('Vui lòng điền ít nhất một giao dịch hợp lệ')
+      return
+    }
+    
+    try {
+      setSubmitting(true)
+      setError('')
+      
+      const transactions = validRows.map(row => ({
+        id_nguoi_gui: parseInt(row.id_nguoi_gui),
+        id_nguoi_nhan: parseInt(row.id_nguoi_nhan),
+        id_loai_giao_dich: parseInt(row.id_loai_giao_dich),
+        so_diem_giao_dich: parseFloat(row.so_diem_giao_dich) || 0,
+        noi_dung_giao_dich: row.noi_dung_giao_dich || null
+      }))
+      
+      const response = await transactionAPI.createMany(transactions)
+      if (response.success) {
+        // Reload trang đầu tiên sau khi thêm nhiều transactions
+        setPagination(prev => ({ ...prev, page: 1 }))
+        await loadTransactions(1)
+        await loadAllTransactionsForCancelCheck()
+        await loadAllTransactionsForFilter()
+        
+        // Reset form
+        setTransactionRows([{
+          id: 1,
+          id_nguoi_gui: '',
+          id_nguoi_nhan: '',
+          id_loai_giao_dich: '',
+          so_diem_giao_dich: '',
+          noi_dung_giao_dich: ''
+        }])
+        setGiaoLichText('')
+        setSanDiemText('')
+        
+        alert(`Tạo thành công ${transactions.length} giao dịch!`)
+      }
+    } catch (err) {
+      setError(err.message || 'Không thể tạo giao dịch')
+      console.error('Create transactions error:', err)
     } finally {
       setSubmitting(false)
     }
@@ -698,84 +1152,69 @@ const QuanLyGiaoDich = () => {
     return transactions
   }
 
-  const parseMultipleTransactions = (text) => {
-    // Nếu đang chọn loại "Giao lịch", parse từ tin nhắn chat
-    if (selectedLoaiGiaoDich === '2') { // ID của "Giao lịch" là 2
-      return parseChatMessages(text)
-    }
-    
-    // Nếu đang chọn loại "San điểm", parse từ tin nhắn chat
-    if (selectedLoaiGiaoDich === '1') { // ID của "San điểm" là 1
-      return parseSanDiemMessages(text)
-    }
-    
-    // Format cũ: ID_Nguoi_Gui ID_Nguoi_Nhan So_Diem [Noi_Dung]
-    const lines = text.split('\n').filter(line => line.trim())
-    const transactions = []
-    
-    for (const line of lines) {
-      const trimmedLine = line.trim()
-      if (!trimmedLine) continue
-      
-      const parts = trimmedLine.split(/\s+/).filter(p => p)
-      if (parts.length < 3) continue
-      
-      const id_nguoi_gui = parseInt(parts[0])
-      const id_nguoi_nhan = parseInt(parts[1])
-      const so_diem_giao_dich = parseFloat(parts[2]) || 0
-      const noi_dung_giao_dich = parts.slice(3).join(' ').trim() || null
-      
-      if (!id_nguoi_gui || !id_nguoi_nhan) continue
-      
-      transactions.push({
-        id_nguoi_gui,
-        id_nguoi_nhan,
-        so_diem_giao_dich,
-        noi_dung_giao_dich
-      })
-    }
-    
-    return transactions
+
+  // Mở modal sửa giao dịch
+  const handleEditTransaction = (transaction) => {
+    setEditingTransaction(transaction)
+    setEditForm({
+      id_nguoi_gui: transaction.id_nguoi_gui.toString(),
+      id_nguoi_nhan: transaction.id_nguoi_nhan.toString(),
+      id_loai_giao_dich: transaction.id_loai_giao_dich.toString(),
+      so_diem_giao_dich: transaction.so_diem_giao_dich.toString(),
+      noi_dung_giao_dich: transaction.noi_dung_giao_dich || ''
+    })
+    setShowEditModal(true)
+    setError('')
   }
 
-  const handleMultipleTransactionsSubmit = async (e) => {
+  // Đóng modal sửa
+  const handleCloseEditModal = () => {
+    setShowEditModal(false)
+    setEditingTransaction(null)
+    setEditForm({
+      id_nguoi_gui: '',
+      id_nguoi_nhan: '',
+      id_loai_giao_dich: '',
+      so_diem_giao_dich: '',
+      noi_dung_giao_dich: ''
+    })
+    setError('')
+  }
+
+  // Xử lý thay đổi form sửa
+  const handleEditFormChange = (field, value) => {
+    setEditForm(prev => ({ ...prev, [field]: value }))
+  }
+
+  // Cập nhật giao dịch
+  const handleUpdateTransaction = async (e) => {
     e.preventDefault()
-    if (!selectedLoaiGiaoDich) {
-      setError('Vui lòng chọn loại giao dịch')
-      return
-    }
+    
+    if (!editingTransaction) return
     
     try {
       setSubmitting(true)
       setError('')
-      const parsedTransactions = parseMultipleTransactions(multipleTransactionsText)
       
-      if (parsedTransactions.length === 0) {
-        setError('Không có giao dịch hợp lệ. Vui lòng kiểm tra định dạng.')
-        return
+      const transactionData = {
+        id_nguoi_gui: parseInt(editForm.id_nguoi_gui),
+        id_nguoi_nhan: parseInt(editForm.id_nguoi_nhan),
+        id_loai_giao_dich: parseInt(editForm.id_loai_giao_dich),
+        so_diem_giao_dich: parseFloat(editForm.so_diem_giao_dich) || 0,
+        noi_dung_giao_dich: editForm.noi_dung_giao_dich || null
       }
       
-      // Thêm id_loai_giao_dich vào mỗi transaction
-      const transactions = parsedTransactions.map(tx => ({
-        ...tx,
-        id_loai_giao_dich: parseInt(selectedLoaiGiaoDich)
-      }))
-      
-      const response = await transactionAPI.createMany(transactions)
+      const response = await transactionAPI.update(editingTransaction.id, transactionData)
       if (response.success) {
-        // Reload trang đầu tiên sau khi thêm nhiều transactions
-        setPagination(prev => ({ ...prev, page: 1 }))
-        await loadTransactions(1)
-        await loadAllTransactionsForCancelCheck() // Reload tất cả để cập nhật trạng thái "Đã hủy"
-        await loadAllTransactionsForFilter() // Reload tất cả để cập nhật filter
-        setMultipleTransactionsText('')
-        setSelectedLoaiGiaoDich('')
-        setShowModal(false)
-        alert(`Tạo thành công ${transactions.length} giao dịch!`)
+        await loadTransactions(pagination.page)
+        await loadAllTransactionsForCancelCheck()
+        await loadAllTransactionsForFilter()
+        handleCloseEditModal()
+        alert('Cập nhật giao dịch thành công!')
       }
     } catch (err) {
-      setError(err.message || 'Không thể tạo nhiều giao dịch')
-      console.error('Create multiple transactions error:', err)
+      setError(err.message || 'Không thể cập nhật giao dịch')
+      console.error('Update transaction error:', err)
     } finally {
       setSubmitting(false)
     }
@@ -928,106 +1367,330 @@ const QuanLyGiaoDich = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl md:text-3xl font-raleway-bold text-gray-800 mb-1 sm:mb-2">
-            Quản lý giao dịch
-          </h1>
-          <p className="text-sm sm:text-base text-gray-600 font-raleway-regular">
-            Theo dõi và quản lý tất cả các giao dịch trong hệ thống
-          </p>
-        </div>
-        <button 
-          onClick={() => setShowModal(true)}
-          className="bg-primary hover:bg-primary-dark text-white font-raleway-semibold px-4 sm:px-5 md:px-6 py-2 sm:py-2.5 md:py-3 text-sm sm:text-base rounded-lg transition-all duration-200 shadow-md hover:shadow-lg"
-        >
-          + Tạo giao dịch mới
-        </button>
+      <div>
+        <h1 className="text-xl sm:text-2xl md:text-3xl font-raleway-bold text-gray-800 mb-1 sm:mb-2">
+          Quản lý giao dịch
+        </h1>
+        <p className="text-sm sm:text-base text-gray-600 font-raleway-regular">
+          Theo dõi và quản lý tất cả các giao dịch trong hệ thống
+        </p>
       </div>
 
-      {/* Error Message */}
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-3 sm:px-4 py-2 sm:py-3 rounded-lg text-sm sm:text-base font-raleway-medium">
-          {error}
-        </div>
-      )}
-
-      {/* Filters */}
-      <div className="bg-white rounded-lg shadow-md p-3 sm:p-4">
-        <div className="space-y-3 sm:space-y-4">
-          {/* Search */}
-          <div>
-            <input
-              type="text"
-              placeholder="Tìm kiếm theo nội dung, tên người gửi/nhận, loại giao dịch, ID..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
-            />
+      {/* Main Tabs */}
+      <div className="bg-white rounded-lg shadow-md">
+        <div className="border-b border-gray-200">
+          <div className="flex space-x-1">
+            <button
+              onClick={() => setMainTab('create')}
+              className={`px-6 py-3 font-raleway-semibold text-sm rounded-t-lg transition-all ${
+                mainTab === 'create'
+                  ? 'bg-primary text-white'
+                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+              }`}
+            >
+              Tạo giao dịch mới
+            </button>
+            <button
+              onClick={() => setMainTab('list')}
+              className={`px-6 py-3 font-raleway-semibold text-sm rounded-t-lg transition-all ${
+                mainTab === 'list'
+                  ? 'bg-primary text-white'
+                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+              }`}
+            >
+              Danh sách giao dịch
+            </button>
           </div>
-          
-          {/* Filter Row - Loại giao dịch, Từ ngày, Đến ngày, Reset */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {/* Filter Loại Giao Dịch */}
-            <div>
-              <label className="block text-xs sm:text-sm font-raleway-semibold text-gray-700 mb-1">
-                Loại giao dịch
-              </label>
-              <select
-                value={filterLoaiGiaoDich}
-                onChange={(e) => setFilterLoaiGiaoDich(e.target.value)}
-                className="w-full px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
-              >
-                <option value="all">Tất cả</option>
-                <option value="1">San điểm</option>
-                <option value="2">Giao lịch</option>
-                <option value="3">Hủy lịch</option>
-              </select>
-            </div>
-            
-            {/* Filter Từ Ngày */}
-            <div>
-              <label className="block text-xs sm:text-sm font-raleway-semibold text-gray-700 mb-1">
-                Từ ngày
-              </label>
-              <input
-                type="date"
-                value={filterDateFrom}
-                onChange={(e) => setFilterDateFrom(e.target.value)}
-                className="w-full px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
-              />
-            </div>
-            
-            {/* Filter Đến Ngày */}
-            <div>
-              <label className="block text-xs sm:text-sm font-raleway-semibold text-gray-700 mb-1">
-                Đến ngày
-              </label>
-              <input
-                type="date"
-                value={filterDateTo}
-                onChange={(e) => setFilterDateTo(e.target.value)}
-                className="w-full px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
-              />
-            </div>
-            
-            {/* Reset Button */}
-            <div className="flex items-end">
-              {hasActiveFilters && (
-                <button
-                  onClick={handleResetFilters}
-                  className="w-full px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg text-gray-700 font-raleway-semibold hover:bg-gray-50 transition-colors"
-                >
-                  Xóa bộ lọc
-                </button>
+        </div>
+
+        <div className="p-4 sm:p-6">
+          {mainTab === 'create' ? (
+            /* Tab: Tạo giao dịch mới */
+            <form onSubmit={handleSubmitAll} className="space-y-6">
+              {/* Error Message */}
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm font-raleway-medium">
+                  {error}
+                </div>
               )}
-            </div>
-          </div>
-        </div>
-      </div>
 
-      {/* Transactions - Cards on Mobile/Tablet, Table on Desktop */}
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
+              {/* Transaction Rows */}
+              <div className="space-y-4">
+                {transactionRows.map((row, index) => (
+                  <div key={row.id} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-sm font-raleway-semibold text-gray-700">
+                        Giao dịch #{index + 1}
+                      </h3>
+                      {transactionRows.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveRow(row.id)}
+                          className="text-red-500 hover:text-red-700 text-sm font-raleway-semibold"
+                        >
+                          Xóa
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Hàng đầu tiên: Các ô input */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                      {/* Người gửi */}
+                      <div>
+                        <label className="block text-xs font-raleway-semibold text-gray-700 mb-1">
+                          Người gửi <span className="text-red-500">*</span>
+                        </label>
+                        {loadingUsers ? (
+                          <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm">
+                            Đang tải...
+                          </div>
+                        ) : (
+                          <select
+                            value={row.id_nguoi_gui}
+                            onChange={(e) => handleRowChange(row.id, 'id_nguoi_gui', e.target.value)}
+                            required
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                          >
+                            <option value="">-- Chọn --</option>
+                            {users.map((user) => (
+                              <option key={user.id} value={user.id}>
+                                {user.ten_zalo}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+
+                      {/* Người nhận */}
+                      <div>
+                        <label className="block text-xs font-raleway-semibold text-gray-700 mb-1">
+                          Người nhận <span className="text-red-500">*</span>
+                        </label>
+                        {loadingUsers ? (
+                          <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm">
+                            Đang tải...
+                          </div>
+                        ) : (
+                          <select
+                            value={row.id_nguoi_nhan}
+                            onChange={(e) => handleRowChange(row.id, 'id_nguoi_nhan', e.target.value)}
+                            required
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                          >
+                            <option value="">-- Chọn --</option>
+                            {users.map((user) => (
+                              <option key={user.id} value={user.id}>
+                                {user.ten_zalo}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+
+                      {/* Loại giao dịch */}
+                      <div>
+                        <label className="block text-xs font-raleway-semibold text-gray-700 mb-1">
+                          Loại giao dịch <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                          value={row.id_loai_giao_dich}
+                          onChange={(e) => handleRowChange(row.id, 'id_loai_giao_dich', e.target.value)}
+                          required
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                        >
+                          <option value="">-- Chọn --</option>
+                          <option value="1">San điểm</option>
+                          <option value="2">Giao lịch</option>
+                        </select>
+                      </div>
+
+                      {/* Số điểm */}
+                      <div>
+                        <label className="block text-xs font-raleway-semibold text-gray-700 mb-1">
+                          Số điểm <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={row.so_diem_giao_dich}
+                          onChange={(e) => handleRowChange(row.id, 'so_diem_giao_dich', e.target.value)}
+                          required
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                          placeholder="0.00"
+                        />
+                      </div>
+
+                      {/* Nội dung giao dịch */}
+                      <div>
+                        <label className="block text-xs font-raleway-semibold text-gray-700 mb-1">
+                          Nội dung
+                        </label>
+                        <input
+                          type="text"
+                          value={row.noi_dung_giao_dich}
+                          onChange={(e) => handleRowChange(row.id, 'noi_dung_giao_dich', e.target.value)}
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                          placeholder="Nội dung giao dịch"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Nút thêm hàng */}
+              <div>
+                <button
+                  type="button"
+                  onClick={handleAddRow}
+                  className="px-4 py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-primary hover:text-primary font-raleway-semibold text-sm transition-colors"
+                >
+                  + Thêm giao dịch mới
+                </button>
+              </div>
+
+              {/* Hàng thứ 2: 2 ô textarea */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Textarea Giao lịch */}
+                <div>
+                  <label className="block text-sm font-raleway-semibold text-gray-700 mb-2">
+                    Nhập tin nhắn Giao lịch
+                  </label>
+                  <textarea
+                    value={giaoLichText}
+                    onChange={(e) => handleGiaoLichTextChange(e.target.value)}
+                    onPaste={handleGiaoLichPaste}
+                    onBlur={handleGiaoLichBlur}
+                    rows={8}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular resize-none font-mono text-sm"
+                    placeholder="Dán đoạn tin nhắn chat vào đây. Hệ thống sẽ tự động phát hiện và tạo giao dịch từ 3 tin nhắn liên tiếp."
+                  />
+                </div>
+
+                {/* Textarea San điểm */}
+                <div>
+                  <label className="block text-sm font-raleway-semibold text-gray-700 mb-2">
+                    Nhập tin nhắn San điểm
+                  </label>
+                  <textarea
+                    value={sanDiemText}
+                    onChange={(e) => handleSanDiemTextChange(e.target.value)}
+                    onPaste={handleSanDiemPaste}
+                    onBlur={handleSanDiemBlur}
+                    rows={8}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular resize-none font-mono text-sm"
+                    placeholder="Dán đoạn tin nhắn chat vào đây. Hệ thống sẽ tự động phát hiện và tạo giao dịch từ 1-2 tin nhắn."
+                  />
+                </div>
+              </div>
+
+              {/* Submit Button */}
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-6 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg font-raleway-semibold transition-colors shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                >
+                  {submitting ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Đang xử lý...
+                    </>
+                  ) : (
+                    'Tạo tất cả giao dịch'
+                  )}
+                </button>
+              </div>
+            </form>
+          ) : (
+            /* Tab: Danh sách giao dịch */
+            <div className="space-y-6">
+              {/* Error Message */}
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-3 sm:px-4 py-2 sm:py-3 rounded-lg text-sm sm:text-base font-raleway-medium">
+                  {error}
+                </div>
+              )}
+
+              {/* Filters */}
+              <div className="bg-white rounded-lg shadow-md p-3 sm:p-4">
+                <div className="space-y-3 sm:space-y-4">
+                  {/* Search */}
+                  <div>
+                    <input
+                      type="text"
+                      placeholder="Tìm kiếm theo nội dung, tên người gửi/nhận, loại giao dịch, ID..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                    />
+                  </div>
+                  
+                  {/* Filter Row - Loại giao dịch, Từ ngày, Đến ngày, Reset */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    {/* Filter Loại Giao Dịch */}
+                    <div>
+                      <label className="block text-xs sm:text-sm font-raleway-semibold text-gray-700 mb-1">
+                        Loại giao dịch
+                      </label>
+                      <select
+                        value={filterLoaiGiaoDich}
+                        onChange={(e) => setFilterLoaiGiaoDich(e.target.value)}
+                        className="w-full px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                      >
+                        <option value="all">Tất cả</option>
+                        <option value="1">San điểm</option>
+                        <option value="2">Giao lịch</option>
+                        <option value="3">Hủy lịch</option>
+                      </select>
+                    </div>
+                    
+                    {/* Filter Từ Ngày */}
+                    <div>
+                      <label className="block text-xs sm:text-sm font-raleway-semibold text-gray-700 mb-1">
+                        Từ ngày
+                      </label>
+                      <input
+                        type="date"
+                        value={filterDateFrom}
+                        onChange={(e) => setFilterDateFrom(e.target.value)}
+                        className="w-full px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                      />
+                    </div>
+                    
+                    {/* Filter Đến Ngày */}
+                    <div>
+                      <label className="block text-xs sm:text-sm font-raleway-semibold text-gray-700 mb-1">
+                        Đến ngày
+                      </label>
+                      <input
+                        type="date"
+                        value={filterDateTo}
+                        onChange={(e) => setFilterDateTo(e.target.value)}
+                        className="w-full px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                      />
+                    </div>
+                    
+                    {/* Reset Button */}
+                    <div className="flex items-end">
+                      {hasActiveFilters && (
+                        <button
+                          onClick={handleResetFilters}
+                          className="w-full px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg text-gray-700 font-raleway-semibold hover:bg-gray-50 transition-colors"
+                        >
+                          Xóa bộ lọc
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Transactions - Cards on Mobile/Tablet, Table on Desktop */}
+              <div className="bg-white rounded-lg shadow-md overflow-hidden">
         {loading || loadingAllTransactions ? (
           <div className="p-8 text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
@@ -1109,19 +1772,36 @@ const QuanLyGiaoDich = () => {
                           {formatDate(transaction.created_at)}
                         </span>
                       </div>
+                      {transaction.noi_dung_giao_dich && (
+                        <div className="flex items-start justify-between">
+                          <span className="text-xs font-raleway-medium text-gray-500">Nội dung:</span>
+                          <span className="text-xs font-raleway-regular text-gray-700 text-right flex-1 ml-2">
+                            {transaction.noi_dung_giao_dich}
+                          </span>
+                        </div>
+                      )}
                     </div>
                     
-                    {canCancel && (
-                      <div className="pt-2 border-t border-gray-200">
+                    <div className="pt-2 border-t border-gray-200 flex gap-2">
+                      {transaction.ten_loai_giao_dich !== 'Hủy lịch' && (
+                        <button
+                          onClick={() => handleEditTransaction(transaction)}
+                          disabled={submitting}
+                          className="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-raleway-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Sửa
+                        </button>
+                      )}
+                      {canCancel && (
                         <button
                           onClick={() => handleCancelTransaction(transaction)}
                           disabled={submitting}
-                          className="w-full px-3 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-raleway-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="flex-1 px-3 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-raleway-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           Hủy lịch
                         </button>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 )
               })}
@@ -1146,6 +1826,9 @@ const QuanLyGiaoDich = () => {
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-raleway-semibold text-gray-600 uppercase tracking-wider">
                       Số điểm
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-raleway-semibold text-gray-600 uppercase tracking-wider">
+                      Nội dung
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-raleway-semibold text-gray-600 uppercase tracking-wider">
                       Ngày giờ
@@ -1205,21 +1888,36 @@ const QuanLyGiaoDich = () => {
                             {parseFloat(transaction.so_diem_giao_dich).toFixed(2)}
                           </span>
                         </td>
+                        <td className="px-6 py-4 text-sm font-raleway-regular text-gray-700 max-w-xs">
+                          {transaction.noi_dung_giao_dich || '-'}
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-raleway-regular text-gray-500">
                           {formatDate(transaction.created_at)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          {canCancel ? (
-                            <button
-                              onClick={() => handleCancelTransaction(transaction)}
-                              disabled={submitting}
-                              className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-sm font-raleway-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              Hủy lịch
-                            </button>
-                          ) : (
-                            <span className="text-gray-400 text-sm font-raleway-regular">-</span>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {transaction.ten_loai_giao_dich !== 'Hủy lịch' && (
+                              <button
+                                onClick={() => handleEditTransaction(transaction)}
+                                disabled={submitting}
+                                className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-sm font-raleway-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                Sửa
+                              </button>
+                            )}
+                            {canCancel && (
+                              <button
+                                onClick={() => handleCancelTransaction(transaction)}
+                                disabled={submitting}
+                                className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-sm font-raleway-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                Hủy lịch
+                              </button>
+                            )}
+                            {!canCancel && transaction.ten_loai_giao_dich === 'Hủy lịch' && (
+                              <span className="text-gray-400 text-sm font-raleway-regular">-</span>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     )
@@ -1265,321 +1963,168 @@ const QuanLyGiaoDich = () => {
             </div>
           </div>
         )}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Modal Popup */}
-      {showModal && (
+      {/* Modal Sửa Giao Dịch */}
+      {showEditModal && editingTransaction && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-            {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-              <h2 className="text-2xl font-raleway-bold text-gray-800">
-                Tạo giao dịch mới
-              </h2>
-              <button
-                onClick={() => {
-                  setShowModal(false)
-                  setSelectedLoaiGiaoDich('')
-                  setActiveTab('single')
-                  setSingleTransactionForm({
-                    id_nguoi_gui: '',
-                    id_nguoi_nhan: '',
-                    so_diem_giao_dich: '',
-                    noi_dung_giao_dich: ''
-                  })
-                  setMultipleTransactionsText('')
-                }}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto p-6">
-              {/* Select Loại Giao Dịch */}
-              <div className="mb-6">
-                <label className="block text-sm font-raleway-semibold text-gray-700 mb-2">
-                  Loại giao dịch <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={selectedLoaiGiaoDich}
-                  onChange={(e) => setSelectedLoaiGiaoDich(e.target.value)}
-                  required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-raleway-bold text-gray-800">
+                  Sửa giao dịch #{editingTransaction.id}
+                </h2>
+                <button
+                  onClick={handleCloseEditModal}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
                 >
-                  <option value="">-- Chọn loại giao dịch --</option>
-                  {loaiGiaoDichOptions.map((loai) => (
-                    <option key={loai.id} value={loai.id}>
-                      {loai.ten}
-                    </option>
-                  ))}
-                </select>
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
               </div>
 
-              {/* Chỉ hiển thị tabs khi đã chọn loại giao dịch */}
-              {selectedLoaiGiaoDich && (
-                <>
-                  {/* Tabs */}
-                  <div className="mb-4 border-b border-gray-200">
-                    <div className="flex space-x-1">
-                      <button
-                        onClick={() => setActiveTab('single')}
-                        className={`px-4 py-2 font-raleway-semibold text-sm rounded-t-lg transition-all ${
-                          activeTab === 'single'
-                            ? 'bg-primary text-white'
-                            : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-                        }`}
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm font-raleway-medium mb-4">
+                  {error}
+                </div>
+              )}
+
+              <form onSubmit={handleUpdateTransaction} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Người gửi */}
+                  <div>
+                    <label className="block text-sm font-raleway-semibold text-gray-700 mb-2">
+                      Người gửi <span className="text-red-500">*</span>
+                    </label>
+                    {loadingUsers ? (
+                      <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm">
+                        Đang tải...
+                      </div>
+                    ) : (
+                      <select
+                        value={editForm.id_nguoi_gui}
+                        onChange={(e) => handleEditFormChange('id_nguoi_gui', e.target.value)}
+                        required
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
                       >
-                        Tạo một giao dịch
-                      </button>
-                      <button
-                        onClick={() => setActiveTab('multiple')}
-                        className={`px-4 py-2 font-raleway-semibold text-sm rounded-t-lg transition-all ${
-                          activeTab === 'multiple'
-                            ? 'bg-primary text-white'
-                            : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-                        }`}
-                      >
-                        Tạo nhiều giao dịch
-                      </button>
-                    </div>
+                        <option value="">-- Chọn --</option>
+                        {users.map((user) => (
+                          <option key={user.id} value={user.id}>
+                            {user.ten_zalo}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </div>
 
-                  {/* Tab Content */}
-                  {activeTab === 'single' ? (
-                    <form onSubmit={handleSingleTransactionSubmit} className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-raleway-semibold text-gray-700 mb-2">
-                          Người gửi <span className="text-red-500">*</span>
-                        </label>
-                        {loadingUsers ? (
-                          <div className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 font-raleway-regular">
-                            Đang tải danh sách người dùng...
-                          </div>
-                        ) : (
-                          <select
-                            name="id_nguoi_gui"
-                            value={singleTransactionForm.id_nguoi_gui}
-                            onChange={handleSingleTransactionChange}
-                            required
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
-                          >
-                            <option value="">-- Chọn người gửi --</option>
-                            {users.length > 0 ? (
-                              users.map((user) => (
-                                <option key={user.id} value={user.id}>
-                                  {user.ten_zalo} (ID: {user.id})
-                                </option>
-                              ))
-                            ) : (
-                              <option value="" disabled>Không có người dùng nào</option>
-                            )}
-                          </select>
-                        )}
+                  {/* Người nhận */}
+                  <div>
+                    <label className="block text-sm font-raleway-semibold text-gray-700 mb-2">
+                      Người nhận <span className="text-red-500">*</span>
+                    </label>
+                    {loadingUsers ? (
+                      <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm">
+                        Đang tải...
                       </div>
+                    ) : (
+                      <select
+                        value={editForm.id_nguoi_nhan}
+                        onChange={(e) => handleEditFormChange('id_nguoi_nhan', e.target.value)}
+                        required
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                      >
+                        <option value="">-- Chọn --</option>
+                        {users.map((user) => (
+                          <option key={user.id} value={user.id}>
+                            {user.ten_zalo}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
 
-                      <div>
-                        <label className="block text-sm font-raleway-semibold text-gray-700 mb-2">
-                          Người nhận <span className="text-red-500">*</span>
-                        </label>
-                        {loadingUsers ? (
-                          <div className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 font-raleway-regular">
-                            Đang tải danh sách người dùng...
-                          </div>
-                        ) : (
-                          <select
-                            name="id_nguoi_nhan"
-                            value={singleTransactionForm.id_nguoi_nhan}
-                            onChange={handleSingleTransactionChange}
-                            required
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
-                          >
-                            <option value="">-- Chọn người nhận --</option>
-                            {users.length > 0 ? (
-                              users.map((user) => (
-                                <option key={user.id} value={user.id}>
-                                  {user.ten_zalo} (ID: {user.id})
-                                </option>
-                              ))
-                            ) : (
-                              <option value="" disabled>Không có người dùng nào</option>
-                            )}
-                          </select>
-                        )}
-                      </div>
+                  {/* Loại giao dịch */}
+                  <div>
+                    <label className="block text-sm font-raleway-semibold text-gray-700 mb-2">
+                      Loại giao dịch <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={editForm.id_loai_giao_dich}
+                      onChange={(e) => handleEditFormChange('id_loai_giao_dich', e.target.value)}
+                      required
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                    >
+                      <option value="">-- Chọn --</option>
+                      <option value="1">San điểm</option>
+                      <option value="2">Giao lịch</option>
+                    </select>
+                  </div>
 
-                      <div>
-                        <label className="block text-sm font-raleway-semibold text-gray-700 mb-2">
-                          Số điểm <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          name="so_diem_giao_dich"
-                          value={singleTransactionForm.so_diem_giao_dich}
-                          onChange={handleSingleTransactionChange}
-                          required
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
-                          placeholder="Nhập số điểm"
-                        />
-                      </div>
+                  {/* Số điểm */}
+                  <div>
+                    <label className="block text-sm font-raleway-semibold text-gray-700 mb-2">
+                      Số điểm <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={editForm.so_diem_giao_dich}
+                      onChange={(e) => handleEditFormChange('so_diem_giao_dich', e.target.value)}
+                      required
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
 
-                      <div>
-                        <label className="block text-sm font-raleway-semibold text-gray-700 mb-2">
-                          Nội dung giao dịch
-                        </label>
-                        <textarea
-                          name="noi_dung_giao_dich"
-                          value={singleTransactionForm.noi_dung_giao_dich}
-                          onChange={handleSingleTransactionChange}
-                          rows={3}
-                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular resize-none"
-                          placeholder="Nhập nội dung giao dịch (tùy chọn)"
-                        />
-                      </div>
+                {/* Nội dung giao dịch */}
+                <div>
+                  <label className="block text-sm font-raleway-semibold text-gray-700 mb-2">
+                    Nội dung giao dịch
+                  </label>
+                  <textarea
+                    value={editForm.noi_dung_giao_dich}
+                    onChange={(e) => handleEditFormChange('noi_dung_giao_dich', e.target.value)}
+                    rows={3}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular resize-none"
+                    placeholder="Nội dung giao dịch"
+                  />
+                </div>
 
-                      <div className="flex justify-end space-x-3 pt-4">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowModal(false)
-                            setSelectedLoaiGiaoDich('')
-                            setSingleTransactionForm({
-                              id_nguoi_gui: '',
-                              id_nguoi_nhan: '',
-                              so_diem_giao_dich: '',
-                              noi_dung_giao_dich: ''
-                            })
-                          }}
-                          className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 font-raleway-semibold hover:bg-gray-50 transition-colors"
-                        >
-                          Hủy
-                        </button>
-                        <button
-                          type="submit"
-                          disabled={submitting}
-                          className="px-6 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg font-raleway-semibold transition-colors shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-                        >
-                          {submitting ? (
-                            <>
-                              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
-                              Đang xử lý...
-                            </>
-                          ) : (
-                            'Tạo giao dịch'
-                          )}
-                        </button>
-                      </div>
-                    </form>
-                  ) : (
-                    <form onSubmit={handleMultipleTransactionsSubmit} className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-raleway-semibold text-gray-700 mb-2">
-                          Danh sách giao dịch <span className="text-red-500">*</span>
-                        </label>
-                        <p className="text-xs text-gray-500 font-raleway-regular mb-3">
-                          {selectedLoaiGiaoDich === '2' ? (
-                            <>Dán đoạn tin nhắn chat vào đây. Hệ thống sẽ tự động phát hiện và tạo giao dịch "Giao lịch" từ 3 tin nhắn liên tiếp.</>
-                          ) : selectedLoaiGiaoDich === '1' ? (
-                            <>Dán đoạn tin nhắn chat vào đây. Hệ thống sẽ tự động phát hiện và tạo giao dịch "San điểm" từ 1-2 tin nhắn.</>
-                          ) : (
-                            <>Dán danh sách giao dịch vào đây. Mỗi dòng là một giao dịch theo định dạng: <strong>ID_Người_Gửi ID_Người_Nhan Số_Điểm [Nội_Dung]</strong></>
-                          )}
-                        </p>
-                        <textarea
-                          name="multipleTransactionsText"
-                          value={multipleTransactionsText}
-                          onChange={(e) => setMultipleTransactionsText(e.target.value)}
-                          required
-                          rows={12}
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular resize-none font-mono text-sm"
-                          placeholder={
-                            selectedLoaiGiaoDich === '2' 
-                              ? "Ví dụ:&#10;[05/12/2025 11:39:33] Tú Vios: Tiên 13h30 6 phạm ngũ lão sedan ki10 thu 200k 0.5&#10;[05/12/2025 11:39:57] Vinh Đại Ca Nguyễn Ngọc Vinh: @Tú Vios Ok&#10;[05/12/2025 11:40:27] Tú Vios: @Vinh Đại Ca Nguyễn Ngọc Vinh ok"
-                              : selectedLoaiGiaoDich === '1'
-                              ? "Ví dụ (2 tin nhắn):&#10;[01/12/2025 10:06:12] Tuấn Ba: San @Kế Toán Full House 5đ&#10;[01/12/2025 10:06:43] Kế Toán Full House: @Tuấn Ba ok nhận&#10;&#10;Ví dụ (1 tin nhắn):&#10;san @Đh Bảo Linh Travel 0.5"
-                              : "Ví dụ:&#10;1 2 10.5 Giao lịch từ A đến B&#10;3 4 -5.0 San điểm&#10;5 6 20.0"
-                          }
-                        />
-                      </div>
-
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                        <p className="text-sm font-raleway-semibold text-blue-800 mb-2">
-                          📋 Hướng dẫn định dạng:
-                        </p>
-                        {selectedLoaiGiaoDich === '2' ? (
-                          <ul className="text-xs text-blue-700 font-raleway-regular space-y-1 list-disc list-inside">
-                            <li>Một giao dịch "Giao lịch" bao gồm 3 tin nhắn liên tiếp:</li>
-                            <li><strong>Tin nhắn 1:</strong> [@ngày giờ] Tên người giao: Nội dung + số điểm</li>
-                            <li><strong>Tin nhắn 2:</strong> [@ngày giờ] Tên người nhận: @Tên người giao + xác nhận [+ số điểm deal lại]</li>
-                            <li><strong>Tin nhắn 3:</strong> [@ngày giờ] Tên người giao: @Tên người nhận + xác nhận (ok, oke, oki...)</li>
-                            <li>Hệ thống sẽ tự động tìm tên Zalo trong danh sách người dùng</li>
-                            <li>Số điểm có thể dùng dấu chấm (.) hoặc phẩy (,)</li>
-                            <li>Nếu tin nhắn 2 có số điểm, sẽ dùng số điểm đó (deal lại)</li>
-                          </ul>
-                        ) : selectedLoaiGiaoDich === '1' ? (
-                          <ul className="text-xs text-blue-700 font-raleway-regular space-y-1 list-disc list-inside">
-                            <li>Giao dịch "San điểm" có 2 trường hợp:</li>
-                            <li><strong>Trường hợp 1 (2 tin nhắn có timestamp):</strong></li>
-                            <li className="ml-4">- Tin nhắn 1: [@ngày giờ] Tên người gửi: San @Tên người nhận + số điểm</li>
-                            <li className="ml-4">- Tin nhắn 2: [@ngày giờ] Tên người nhận: @Tên người gửi + xác nhận (ok, nhận...)</li>
-                            <li><strong>Trường hợp 2 (1 tin nhắn không có timestamp):</strong></li>
-                            <li className="ml-4">- Tin nhắn: san @Tên người nhận + số điểm</li>
-                            <li className="ml-4">- Người gửi mặc định: Kế Toán Full House</li>
-                            <li>Hệ thống sẽ tự động phân biệt 2 trường hợp dựa vào timestamp</li>
-                            <li>Số điểm có thể có "đ" ở cuối (ví dụ: 5đ, 0.5đ)</li>
-                          </ul>
-                        ) : (
-                          <ul className="text-xs text-blue-700 font-raleway-regular space-y-1 list-disc list-inside">
-                            <li>Mỗi dòng là một giao dịch</li>
-                            <li>Định dạng: <strong>ID_Người_Gửi ID_Người_Nhan Số_Điểm [Nội_Dung]</strong></li>
-                            <li>Nội dung giao dịch là tùy chọn</li>
-                            <li>Ví dụ: <code>1 2 10.5 Giao lịch từ A đến B</code></li>
-                            <li>Ví dụ: <code>3 4 -5.0 San điểm</code></li>
-                          </ul>
-                        )}
-                      </div>
-
-                      <div className="flex justify-end space-x-3 pt-4">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowModal(false)
-                            setSelectedLoaiGiaoDich('')
-                            setMultipleTransactionsText('')
-                          }}
-                          className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 font-raleway-semibold hover:bg-gray-50 transition-colors"
-                        >
-                          Hủy
-                        </button>
-                        <button
-                          type="submit"
-                          disabled={submitting}
-                          className="px-6 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg font-raleway-semibold transition-colors shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-                        >
-                          {submitting ? (
-                            <>
-                              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
-                              Đang xử lý...
-                            </>
-                          ) : (
-                            'Tạo nhiều giao dịch'
-                          )}
-                        </button>
-                      </div>
-                    </form>
-                  )}
-                </>
-              )}
+                {/* Buttons */}
+                <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+                  <button
+                    type="button"
+                    onClick={handleCloseEditModal}
+                    disabled={submitting}
+                    className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 font-raleway-semibold hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg font-raleway-semibold transition-colors shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                  >
+                    {submitting ? (
+                      <>
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Đang xử lý...
+                      </>
+                    ) : (
+                      'Cập nhật'
+                    )}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>

@@ -11,7 +11,7 @@ class UserModel {
     // MySQL không hỗ trợ placeholders cho LIMIT và OFFSET, phải chèn trực tiếp
     // Đã validate ở trên nên an toàn
     const [rows] = await pool.execute(
-      `SELECT id, ten_zalo, sdt, so_diem, la_admin, created_at, updated_at FROM nguoi_dung ORDER BY id DESC LIMIT ${limitInt} OFFSET ${offset}`
+      `SELECT id, ten_zalo, sdt, so_diem, la_admin, thong_tin_xe, created_at, updated_at FROM nguoi_dung ORDER BY id DESC LIMIT ${limitInt} OFFSET ${offset}`
     )
     
     // Đếm tổng số records
@@ -34,7 +34,7 @@ class UserModel {
   // Lấy người dùng theo ID
   static async getById(id) {
     const [rows] = await pool.execute(
-      'SELECT id, ten_zalo, sdt, so_diem, la_admin, created_at, updated_at FROM nguoi_dung WHERE id = ?',
+      'SELECT id, ten_zalo, sdt, so_diem, la_admin, thong_tin_xe, created_at, updated_at FROM nguoi_dung WHERE id = ?',
       [id]
     )
     return rows[0]
@@ -51,10 +51,10 @@ class UserModel {
 
   // Tạo người dùng mới
   static async create(userData) {
-    const { ten_zalo, sdt, so_diem, la_admin, mat_khau } = userData
+    const { ten_zalo, sdt, so_diem, la_admin, mat_khau, thong_tin_xe } = userData
     const [result] = await pool.execute(
-      'INSERT INTO nguoi_dung (ten_zalo, sdt, so_diem, la_admin, mat_khau) VALUES (?, ?, ?, ?, ?)',
-      [ten_zalo, sdt || null, so_diem || 0, la_admin || false, mat_khau]
+      'INSERT INTO nguoi_dung (ten_zalo, sdt, so_diem, la_admin, mat_khau, thong_tin_xe) VALUES (?, ?, ?, ?, ?, ?)',
+      [ten_zalo, sdt || null, so_diem || 0, la_admin || false, mat_khau, thong_tin_xe || null]
     )
     return this.getById(result.insertId)
   }
@@ -74,17 +74,18 @@ class UserModel {
         const end = Math.min(start + BATCH_SIZE, usersData.length)
         const batch = usersData.slice(start, end)
 
-        const placeholders = batch.map(() => '(?, ?, ?, ?, ?)').join(', ')
+        const placeholders = batch.map(() => '(?, ?, ?, ?, ?, ?)').join(', ')
         const values = batch.flatMap(user => [
           user.ten_zalo,
           user.sdt || null,
           user.so_diem || 0,
           user.la_admin || false,
-          user.mat_khau
+          user.mat_khau,
+          user.thong_tin_xe || null
         ])
 
         const [result] = await connection.execute(
-          `INSERT INTO nguoi_dung (ten_zalo, sdt, so_diem, la_admin, mat_khau) VALUES ${placeholders}`,
+          `INSERT INTO nguoi_dung (ten_zalo, sdt, so_diem, la_admin, mat_khau, thong_tin_xe) VALUES ${placeholders}`,
           values
         )
 
@@ -110,7 +111,7 @@ class UserModel {
 
   // Cập nhật người dùng
   static async update(id, userData) {
-    const { ten_zalo, sdt, so_diem, la_admin, mat_khau } = userData
+    const { ten_zalo, sdt, so_diem, la_admin, mat_khau, thong_tin_xe } = userData
     const updates = []
     const values = []
 
@@ -133,6 +134,10 @@ class UserModel {
     if (mat_khau !== undefined) {
       updates.push('mat_khau = ?')
       values.push(mat_khau)
+    }
+    if (thong_tin_xe !== undefined) {
+      updates.push('thong_tin_xe = ?')
+      values.push(thong_tin_xe || null)
     }
 
     if (updates.length === 0) {

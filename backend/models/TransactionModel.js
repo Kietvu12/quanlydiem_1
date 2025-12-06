@@ -202,6 +202,49 @@ class TransactionModel {
     )
     return rows[0]
   }
+
+  // Cập nhật giao dịch
+  static async update(id, transactionData) {
+    const { id_nguoi_gui, id_nguoi_nhan, id_loai_giao_dich, so_diem_giao_dich, noi_dung_giao_dich } = transactionData
+    
+    const updateFields = []
+    const updateValues = []
+    
+    if (id_nguoi_gui !== undefined) {
+      updateFields.push('id_nguoi_gui = ?')
+      updateValues.push(id_nguoi_gui)
+    }
+    if (id_nguoi_nhan !== undefined) {
+      updateFields.push('id_nguoi_nhan = ?')
+      updateValues.push(id_nguoi_nhan)
+    }
+    if (id_loai_giao_dich !== undefined) {
+      updateFields.push('id_loai_giao_dich = ?')
+      updateValues.push(id_loai_giao_dich)
+    }
+    if (so_diem_giao_dich !== undefined) {
+      updateFields.push('so_diem_giao_dich = ?')
+      updateValues.push(so_diem_giao_dich)
+    }
+    if (noi_dung_giao_dich !== undefined) {
+      updateFields.push('noi_dung_giao_dich = ?')
+      updateValues.push(noi_dung_giao_dich)
+    }
+    
+    if (updateFields.length === 0) {
+      return this.getById(id)
+    }
+    
+    updateFields.push('updated_at = NOW()')
+    updateValues.push(id)
+    
+    await pool.execute(
+      `UPDATE giao_dich SET ${updateFields.join(', ')} WHERE id = ?`,
+      updateValues
+    )
+    
+    return this.getById(id)
+  }
 }
 
 export default TransactionModel

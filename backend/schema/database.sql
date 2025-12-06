@@ -15,6 +15,7 @@ CREATE TABLE nguoi_dung (
     so_diem DECIMAL(10, 2) NOT NULL DEFAULT 0.00 COMMENT 'Số điểm có thể là số thập phân, số âm (vd: -1.5, 2.5, 3, -0.5)',
     la_admin BOOLEAN NOT NULL DEFAULT FALSE,
     mat_khau VARCHAR(255) NOT NULL COMMENT 'Mật khẩu đã được hash',
+    thong_tin_xe LONGTEXT NULL COMMENT 'Thông tin xe',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_ten_zalo (ten_zalo),

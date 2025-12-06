@@ -20,6 +20,26 @@ class LogModel {
     )
     return rows[0]
   }
+
+  // Lấy log mới nhất theo ID giao dịch
+  static async getLatestByTransactionId(id_giao_dich) {
+    const [rows] = await pool.execute(
+      'SELECT * FROM logs WHERE id_giao_dich = ? ORDER BY id DESC LIMIT 1',
+      [id_giao_dich]
+    )
+    return rows[0]
+  }
+
+  // Cập nhật log
+  static async update(id, logData, connection = null) {
+    const { so_diem_con_lai_nguoi_nhan, so_diem_con_lai_nguoi_gui } = logData
+    const db = connection || pool
+    await db.execute(
+      'UPDATE logs SET so_diem_con_lai_nguoi_nhan = ?, so_diem_con_lai_nguoi_gui = ? WHERE id = ?',
+      [so_diem_con_lai_nguoi_nhan, so_diem_con_lai_nguoi_gui, id]
+    )
+    return id
+  }
 }
 
 export default LogModel

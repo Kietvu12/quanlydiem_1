@@ -359,6 +359,165 @@ class TransactionController {
       connection.release()
     }
   }
+
+  // Cập nhật giao dịch
+  static async update(req, res) {
+    const connection = await pool.getConnection()
+    try {
+      await connection.beginTransaction()
+
+      const { id } = req.params
+      const { id_nguoi_gui, id_nguoi_nhan, id_loai_giao_dich, so_diem_giao_dich, noi_dung_giao_dich } = req.body
+
+      // Lấy giao dịch hiện tại
+      const currentTransaction = await TransactionModel.getById(id)
+      if (!currentTransaction) {
+        await connection.rollback()
+        return res.status(404).json({
+          success: false,
+          message: 'Không tìm thấy giao dịch'
+        })
+      }
+
+      // Kiểm tra nếu giao dịch là "Hủy lịch", không cho phép sửa
+      if (currentTransaction.ten_loai_giao_dich === 'Hủy lịch') {
+        await connection.rollback()
+        return res.status(400).json({
+          success: false,
+          message: 'Không thể sửa giao dịch "Hủy lịch"'
+        })
+      }
+
+      // Lấy loại giao dịch cũ và mới
+      const oldLoaiGiaoDich = await TransactionModel.getLoaiGiaoDichById(currentTransaction.id_loai_giao_dich)
+      const newLoaiGiaoDichId = id_loai_giao_dich !== undefined ? id_loai_giao_dich : currentTransaction.id_loai_giao_dich
+      const newLoaiGiaoDich = await TransactionModel.getLoaiGiaoDichById(newLoaiGiaoDichId)
+      
+      if (!newLoaiGiaoDich) {
+        await connection.rollback()
+        return res.status(400).json({
+          success: false,
+          message: 'Loại giao dịch không hợp lệ'
+        })
+      }
+
+      // Xác định người gửi/nhận cũ và mới
+      const oldNguoiGuiId = currentTransaction.id_nguoi_gui
+      const oldNguoiNhanId = currentTransaction.id_nguoi_nhan
+      const newNguoiGuiId = id_nguoi_gui !== undefined ? id_nguoi_gui : oldNguoiGuiId
+      const newNguoiNhanId = id_nguoi_nhan !== undefined ? id_nguoi_nhan : oldNguoiNhanId
+
+      // Validate
+      if (newNguoiGuiId === newNguoiNhanId) {
+        await connection.rollback()
+        return res.status(400).json({
+          success: false,
+          message: 'Người gửi và người nhận không thể là cùng một người'
+        })
+      }
+
+      // Lấy thông tin người dùng
+      const oldNguoiGui = await UserModel.getById(oldNguoiGuiId)
+      const oldNguoiNhan = await UserModel.getById(oldNguoiNhanId)
+      const newNguoiGui = await UserModel.getById(newNguoiGuiId)
+      const newNguoiNhan = await UserModel.getById(newNguoiNhanId)
+
+      if (!oldNguoiGui || !oldNguoiNhan || !newNguoiGui || !newNguoiNhan) {
+        await connection.rollback()
+        return res.status(404).json({
+          success: false,
+          message: 'Không tìm thấy người dùng'
+        })
+      }
+
+      // Hoàn lại điểm cho người gửi/nhận cũ (đảo ngược giao dịch cũ)
+      let oldDiemNguoiGui = parseFloat(oldNguoiGui.so_diem)
+      let oldDiemNguoiNhan = parseFloat(oldNguoiNhan.so_diem)
+      const oldSoDiem = parseFloat(currentTransaction.so_diem_giao_dich)
+      const oldTenLoai = oldLoaiGiaoDich.ten_loai_giao_dich
+
+      if (oldTenLoai === 'Giao lịch') {
+        // Đảo ngược: người nhận được cộng lại, người gửi bị trừ lại
+        oldDiemNguoiNhan += oldSoDiem
+        oldDiemNguoiGui -= oldSoDiem
+      } else if (oldTenLoai === 'San điểm') {
+        // Đảo ngược: người nhận bị trừ lại, người gửi được cộng lại
+        oldDiemNguoiNhan -= oldSoDiem
+        oldDiemNguoiGui += oldSoDiem
+      }
+
+      // Cập nhật điểm cho người cũ
+      await UserModel.updateDiem(oldNguoiGuiId, oldDiemNguoiGui, connection)
+      await UserModel.updateDiem(oldNguoiNhanId, oldDiemNguoiNhan, connection)
+
+      // Áp dụng logic mới cho người gửi/nhận mới
+      const newSoDiem = so_diem_giao_dich !== undefined ? parseFloat(so_diem_giao_dich) : oldSoDiem
+      const newTenLoai = newLoaiGiaoDich.ten_loai_giao_dich
+
+      // Lấy điểm hiện tại của người mới (có thể đã thay đổi sau khi hoàn lại điểm cũ)
+      let newDiemNguoiGui = parseFloat(newNguoiGui.so_diem)
+      let newDiemNguoiNhan = parseFloat(newNguoiNhan.so_diem)
+
+      // Nếu người gửi/nhận thay đổi, cần lấy điểm mới nhất
+      if (newNguoiGuiId !== oldNguoiGuiId || newNguoiNhanId !== oldNguoiNhanId) {
+        const updatedNguoiGui = await UserModel.getById(newNguoiGuiId)
+        const updatedNguoiNhan = await UserModel.getById(newNguoiNhanId)
+        newDiemNguoiGui = parseFloat(updatedNguoiGui.so_diem)
+        newDiemNguoiNhan = parseFloat(updatedNguoiNhan.so_diem)
+      }
+
+      // Áp dụng logic mới
+      if (newTenLoai === 'Giao lịch') {
+        // Người nhận bị trừ điểm, người gửi được cộng điểm
+        newDiemNguoiNhan -= newSoDiem
+        newDiemNguoiGui += newSoDiem
+      } else if (newTenLoai === 'San điểm') {
+        // Người nhận được cộng điểm, người gửi bị trừ điểm
+        newDiemNguoiNhan += newSoDiem
+        newDiemNguoiGui -= newSoDiem
+      }
+
+      // Cập nhật điểm cho người mới
+      await UserModel.updateDiem(newNguoiGuiId, newDiemNguoiGui, connection)
+      await UserModel.updateDiem(newNguoiNhanId, newDiemNguoiNhan, connection)
+
+      // Cập nhật giao dịch
+      const updatedTransaction = await TransactionModel.update(id, {
+        id_nguoi_gui: newNguoiGuiId,
+        id_nguoi_nhan: newNguoiNhanId,
+        id_loai_giao_dich: newLoaiGiaoDichId,
+        so_diem_giao_dich: newSoDiem,
+        noi_dung_giao_dich: noi_dung_giao_dich !== undefined ? noi_dung_giao_dich : currentTransaction.noi_dung_giao_dich
+      })
+
+      // Cập nhật log
+      const latestLog = await LogModel.getLatestByTransactionId(id)
+      if (latestLog) {
+        await LogModel.update(latestLog.id, {
+          so_diem_con_lai_nguoi_nhan: newDiemNguoiNhan,
+          so_diem_con_lai_nguoi_gui: newDiemNguoiGui
+        }, connection)
+      }
+
+      await connection.commit()
+
+      res.json({
+        success: true,
+        message: 'Cập nhật giao dịch thành công',
+        data: updatedTransaction
+      })
+    } catch (error) {
+      await connection.rollback()
+      console.error('Update transaction error:', error)
+      res.status(500).json({
+        success: false,
+        message: 'Lỗi khi cập nhật giao dịch',
+        error: error.message
+      })
+    } finally {
+      connection.release()
+    }
+  }
 }
 
 export default TransactionController

@@ -1,5 +1,5 @@
 // API Configuration
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://210.245.52.119/api_quanlydiem/api'
 const REQUEST_TIMEOUT = 30000 // 30 seconds
 
 // Lấy token từ localStorage
@@ -293,6 +293,17 @@ export const transactionAPI = {
     return await apiCall('/transactions/bulk', {
       method: 'POST',
       body: { transactions }
+    })
+  },
+
+  // Cập nhật giao dịch
+  update: async (id, transactionData) => {
+    if (!id) {
+      throw new Error('ID giao dịch là bắt buộc')
+    }
+    return await apiCall(`/transactions/${id}`, {
+      method: 'PUT',
+      body: transactionData
     })
   },
 }

@@ -29,14 +29,16 @@ const QuanLyNguoiDung = ({ isAuthenticated = false, isAdmin = false, onLogout })
     sdt: '',
     so_diem: '0',
     la_admin: false,
-    mat_khau: ''
+    mat_khau: '',
+    thong_tin_xe: ''
   })
   const [editUserForm, setEditUserForm] = useState({
     ten_zalo: '',
     sdt: '',
     so_diem: '0',
     la_admin: false,
-    mat_khau: ''
+    mat_khau: '',
+    thong_tin_xe: ''
   })
   const [multipleUsersText, setMultipleUsersText] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
@@ -127,12 +129,14 @@ const QuanLyNguoiDung = ({ isAuthenticated = false, isAdmin = false, onLogout })
     try {
       setSubmitting(true)
       setError('')
+      const DEFAULT_PASSWORD = '123456'
       const userData = {
         ten_zalo: singleUserForm.ten_zalo,
         sdt: singleUserForm.sdt || null,
         so_diem: parseFloat(singleUserForm.so_diem) || 0,
         la_admin: singleUserForm.la_admin,
-        mat_khau: singleUserForm.mat_khau
+        mat_khau: singleUserForm.mat_khau || DEFAULT_PASSWORD,
+        thong_tin_xe: singleUserForm.thong_tin_xe || null
       }
       const response = await userAPI.create(userData)
       if (response.success) {
@@ -142,7 +146,8 @@ const QuanLyNguoiDung = ({ isAuthenticated = false, isAdmin = false, onLogout })
           sdt: '',
           so_diem: '0',
           la_admin: false,
-          mat_khau: ''
+          mat_khau: '',
+          thong_tin_xe: ''
         })
         setShowModal(false)
         alert('Thêm người dùng thành công!')
@@ -159,7 +164,7 @@ const QuanLyNguoiDung = ({ isAuthenticated = false, isAdmin = false, onLogout })
     const lines = text.split('\n').filter(line => line.trim())
     const users = []
     const DEFAULT_SDT = '0123456789'
-    const DEFAULT_PASSWORD = '12334456'
+    const DEFAULT_PASSWORD = '123456'
     
     // Regex patterns
     const pointPattern = /^-?\d+([.,]\d+)?$/ // Số điểm (có thể âm, dùng . hoặc ,)
@@ -175,45 +180,38 @@ const QuanLyNguoiDung = ({ isAuthenticated = false, isAdmin = false, onLogout })
       
       // Tách các phần tử bằng khoảng trắng
       const parts = trimmedLine.split(/\s+/).filter(p => p)
-      if (parts.length < 2) continue
+      if (parts.length < 1) continue
       
-      // Bỏ qua phần đầu tiên nếu nó là số nguyên (ID)
-      let startIndex = 0
-      if (parts.length > 0 && idPattern.test(parts[0])) {
-        startIndex = 1 // Bỏ qua ID
-      }
+      // Kiểm tra xem có số thứ tự ở đầu không (định dạng UserList.txt)
+      const hasIdAtStart = parts.length > 0 && idPattern.test(parts[0])
+      const startIndex = hasIdAtStart ? 1 : 0
       
       // Nếu sau khi bỏ ID mà không còn gì, bỏ qua dòng này
       if (startIndex >= parts.length) continue
       
-      // Tìm số điểm ở cuối cùng (luôn là phần cuối)
+      // Kiểm tra phần cuối có phải là số điểm không
       const lastPart = parts[parts.length - 1]
+      const isLastPartPoint = pointPattern.test(lastPart)
+      
       let soDiem = 0
-      let nameParts = []
+      let ten_zalo = ''
       
-      if (pointPattern.test(lastPart)) {
-        // Phần cuối là số điểm
+      if (hasIdAtStart && isLastPartPoint) {
+        // ĐỊNH DẠNG UserList.txt: Có số thứ tự ở đầu VÀ có số điểm ở cuối
+        // Ví dụ: "132 Đức Trọng PS 0977702366 0.5"
         soDiem = parseFloat(lastPart.replace(',', '.')) || 0
-        // Tất cả các phần còn lại (từ startIndex đến trước phần cuối) là tên
-        // Nhưng cần loại bỏ số điện thoại nếu có
+        // Lấy các phần từ startIndex đến trước phần cuối, loại bỏ số điện thoại
         const middleParts = parts.slice(startIndex, parts.length - 1)
-        nameParts = middleParts.filter(part => !phonePattern.test(part))
+        const nameParts = middleParts.filter(part => !phonePattern.test(part))
+        ten_zalo = nameParts.join(' ').trim()
       } else {
-        // Không tìm thấy số điểm ở cuối, coi tất cả từ startIndex là tên
-        // Nhưng cần loại bỏ số điện thoại nếu có
+        // ĐỊNH DẠNG UserList2.txt: Không có số thứ tự ở đầu HOẶC không có số điểm ở cuối
+        // Một dòng = một tên Zalo, giữ nguyên tất cả (bao gồm số điện thoại nếu có)
+        // Ví dụ: "Trịnh Tuấn Anh 0968845555" hoặc "Đình Hiếu"
         const allParts = parts.slice(startIndex)
-        // Kiểm tra phần cuối có phải là số điện thoại không
-        if (allParts.length > 0 && phonePattern.test(allParts[allParts.length - 1])) {
-          // Phần cuối là số điện thoại, bỏ qua nó
-          nameParts = allParts.slice(0, allParts.length - 1)
-        } else {
-          nameParts = allParts
-        }
-        soDiem = 0
+        ten_zalo = allParts.join(' ').trim()
+        soDiem = 0 // Mặc định số điểm là 0
       }
-      
-      // Ghép tên lại
-      let ten_zalo = nameParts.join(' ').trim()
       
       // Validate: phải có tên
       if (!ten_zalo) {
@@ -280,7 +278,8 @@ const QuanLyNguoiDung = ({ isAuthenticated = false, isAdmin = false, onLogout })
       sdt: user.sdt || '',
       so_diem: user.so_diem?.toString() || '0',
       la_admin: user.la_admin || false,
-      mat_khau: '' // Không hiển thị mật khẩu cũ
+      mat_khau: '', // Không hiển thị mật khẩu cũ
+      thong_tin_xe: user.thong_tin_xe || ''
     })
     setShowEditModal(true)
   }
@@ -304,7 +303,8 @@ const QuanLyNguoiDung = ({ isAuthenticated = false, isAdmin = false, onLogout })
         ten_zalo: editUserForm.ten_zalo,
         sdt: editUserForm.sdt || null,
         so_diem: parseFloat(editUserForm.so_diem) || 0,
-        la_admin: editUserForm.la_admin
+        la_admin: editUserForm.la_admin,
+        thong_tin_xe: editUserForm.thong_tin_xe || null
       }
       
       // Chỉ cập nhật mật khẩu nếu có nhập
@@ -623,6 +623,11 @@ const QuanLyNguoiDung = ({ isAuthenticated = false, isAdmin = false, onLogout })
                       </span>
                     </button>
                   </th>
+                  {isAuthenticated && (
+                    <th className="hidden lg:table-cell px-2 sm:px-3 md:px-4 lg:px-6 py-2 sm:py-2.5 md:py-3 text-left text-[10px] sm:text-xs font-raleway-semibold text-gray-600 uppercase tracking-wider">
+                      Thông tin xe
+                    </th>
+                  )}
                   {/* <th className="hidden lg:table-cell px-2 sm:px-3 md:px-4 lg:px-6 py-2 sm:py-2.5 md:py-3 text-left text-[10px] sm:text-xs font-raleway-semibold text-gray-600 uppercase tracking-wider">
                     Vai trò
                   </th> */}
@@ -662,6 +667,13 @@ const QuanLyNguoiDung = ({ isAuthenticated = false, isAdmin = false, onLogout })
                         {parseFloat(user.so_diem).toFixed(2)}
                       </span>
                     </td>
+                    {isAuthenticated && (
+                      <td className="hidden lg:table-cell px-2 sm:px-3 md:px-4 lg:px-6 py-2 sm:py-3 md:py-4 text-[10px] sm:text-xs md:text-sm font-raleway-regular text-gray-700 max-w-xs">
+                        <div className="truncate" title={user.thong_tin_xe || ''}>
+                          {user.thong_tin_xe || '-'}
+                        </div>
+                      </td>
+                    )}
                     {/* <td className="hidden lg:table-cell px-2 sm:px-3 md:px-4 lg:px-6 py-2 sm:py-3 md:py-4 whitespace-nowrap">
                       <span className={`px-1 sm:px-1.5 md:px-2 py-0.5 sm:py-1 text-[9px] sm:text-[10px] md:text-xs font-raleway-semibold rounded-full ${
                         user.la_admin 
@@ -847,16 +859,29 @@ const QuanLyNguoiDung = ({ isAuthenticated = false, isAdmin = false, onLogout })
 
                   <div>
                     <label className="block text-sm font-raleway-semibold text-gray-700 mb-2">
-                      Mật khẩu <span className="text-red-500">*</span>
+                      Mật khẩu <span className="text-gray-400 text-xs">(mặc định: 123456)</span>
                     </label>
                     <input
                       type="password"
                       name="mat_khau"
                       value={singleUserForm.mat_khau}
                       onChange={handleSingleUserChange}
-                      required
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
-                      placeholder="Nhập mật khẩu"
+                      placeholder="Nhập mật khẩu (để trống sẽ dùng mật khẩu mặc định)"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-raleway-semibold text-gray-700 mb-2">
+                      Thông tin xe
+                    </label>
+                    <textarea
+                      name="thong_tin_xe"
+                      value={singleUserForm.thong_tin_xe}
+                      onChange={handleSingleUserChange}
+                      rows={3}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular resize-none"
+                      placeholder="Nhập thông tin xe (tùy chọn)"
                     />
                   </div>
 
@@ -884,7 +909,8 @@ const QuanLyNguoiDung = ({ isAuthenticated = false, isAdmin = false, onLogout })
                           sdt: '',
                           so_diem: '0',
                           la_admin: false,
-                          mat_khau: ''
+                          mat_khau: '',
+                          thong_tin_xe: ''
                         })
                       }}
                       className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 font-raleway-semibold hover:bg-gray-50 transition-colors"
@@ -941,7 +967,7 @@ const QuanLyNguoiDung = ({ isAuthenticated = false, isAdmin = false, onLogout })
                       <li>Số điểm ở cuối dòng, có thể dùng dấu chấm (.) hoặc phẩy (,), có thể là số âm</li>
                       <li>Bỏ qua ID và ngày tháng nếu có trong dữ liệu</li>
                       <li>Số điện thoại mặc định: 0123456789</li>
-                      <li>Mật khẩu mặc định: 12334456</li>
+                      <li>Mật khẩu mặc định: 123456</li>
                       <li>Ví dụ: <code>Nguyễn Quốc Đại 0</code></li>
                       <li>Ví dụ: <code>Vận Tải Minh Tâm -3.25</code></li>
                       <li>Ví dụ: <code>Huy võ Limosine -0,5</code></li>
@@ -1077,6 +1103,20 @@ const QuanLyNguoiDung = ({ isAuthenticated = false, isAdmin = false, onLogout })
                     onChange={handleEditUserChange}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
                     placeholder="Nhập mật khẩu mới (tùy chọn)"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-raleway-semibold text-gray-700 mb-2">
+                    Thông tin xe
+                  </label>
+                  <textarea
+                    name="thong_tin_xe"
+                    value={editUserForm.thong_tin_xe}
+                    onChange={handleEditUserChange}
+                    rows={3}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular resize-none"
+                    placeholder="Nhập thông tin xe (tùy chọn)"
                   />
                 </div>
 

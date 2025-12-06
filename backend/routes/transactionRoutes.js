@@ -18,5 +18,8 @@ router.post('/', TransactionController.create)
 // Tạo nhiều giao dịch cùng lúc
 router.post('/bulk', TransactionController.createMany)
 
+// Cập nhật giao dịch
+router.put('/:id', TransactionController.update)
+
 export default router
 
