@@ -61,14 +61,14 @@ function App() {
   }
 
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/quanlydiem">
       <Routes>
         {/* Public Route - Login */}
         <Route 
           path="/login" 
           element={
             isAuthenticated ? (
-              <Navigate to="/quan-ly-nguoi-dung" replace />
+              <Navigate to="/quan-ly-giao-dich" replace />
             ) : (
               <Login onLogin={handleLogin} />
             )

@@ -3,7 +3,10 @@ import pool from '../config/db.js'
 class ReportModel {
   // Lấy tất cả báo cáo với pagination
   static async getAll(page = 1, limit = 20, filters = {}) {
-    const offset = (page - 1) * limit
+    // Đảm bảo page và limit là số nguyên và hợp lệ
+    const pageInt = Math.max(1, parseInt(page, 10) || 1)
+    const limitInt = Math.max(1, Math.min(100, parseInt(limit, 10) || 20))
+    const offset = (pageInt - 1) * limitInt
     let whereClause = 'WHERE 1=1'
     const params = []
     
@@ -27,18 +30,20 @@ class ReportModel {
     const total = countResult[0].total
     
     // Lấy danh sách báo cáo với pagination
+    // MySQL không hỗ trợ placeholders cho LIMIT và OFFSET, phải chèn trực tiếp
+    // Đã validate ở trên nên an toàn
     const [rows] = await pool.execute(
-      `SELECT * FROM bao_cao ${whereClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-      [...params, limit, offset]
+      `SELECT * FROM bao_cao ${whereClause} ORDER BY created_at DESC LIMIT ${limitInt} OFFSET ${offset}`,
+      params
     )
     
     return {
       data: rows,
       pagination: {
-        page,
-        limit,
+        page: pageInt,
+        limit: limitInt,
         total,
-        totalPages: Math.ceil(total / limit)
+        totalPages: Math.ceil(total / limitInt)
       }
     }
   }

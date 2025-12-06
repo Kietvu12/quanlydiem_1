@@ -10,5 +10,6 @@ export default defineConfig({
   },
   allowedHosts: [
     "annmarie-unfitted-raylan.ngrok-free.dev"
-  ]
+  ],
+  base: '/quanlydiem/'
 })

@@ -3,7 +3,10 @@ import pool from '../config/db.js'
 class TransactionModel {
   // Lấy tất cả giao dịch với pagination
   static async getAll(page = 1, limit = 60) {
-    const offset = (page - 1) * limit
+    // Đảm bảo page và limit là số nguyên và hợp lệ
+    const pageInt = Math.max(1, parseInt(page, 10) || 1)
+    const limitInt = Math.max(1, Math.min(100, parseInt(limit, 10) || 60))
+    const offset = (pageInt - 1) * limitInt
     
     // Lấy tổng số giao dịch
     const [countResult] = await pool.execute(`
@@ -32,16 +35,16 @@ class TransactionModel {
       LEFT JOIN nguoi_dung ng ON gd.id_nguoi_gui = ng.id
       LEFT JOIN nguoi_dung nn ON gd.id_nguoi_nhan = nn.id
       ORDER BY gd.created_at DESC
-      LIMIT ? OFFSET ?
-    `, [limit, offset])
+      LIMIT ${limitInt} OFFSET ${offset}
+    `)
     
     return {
       data: rows,
       pagination: {
-        page,
-        limit,
+        page: pageInt,
+        limit: limitInt,
         total,
-        totalPages: Math.ceil(total / limit)
+        totalPages: Math.ceil(total / limitInt)
       }
     }
   }
@@ -65,7 +68,10 @@ class TransactionModel {
 
   // Lấy giao dịch của người dùng (cả gửi và nhận) với pagination
   static async getByUserId(userId, page = 1, limit = 60) {
-    const offset = (page - 1) * limit
+    // Đảm bảo page và limit là số nguyên và hợp lệ
+    const pageInt = Math.max(1, parseInt(page, 10) || 1)
+    const limitInt = Math.max(1, Math.min(100, parseInt(limit, 10) || 60))
+    const offset = (pageInt - 1) * limitInt
     
     // Lấy tổng số giao dịch của user
     const [countResult] = await pool.execute(`
@@ -96,16 +102,16 @@ class TransactionModel {
       LEFT JOIN nguoi_dung nn ON gd.id_nguoi_nhan = nn.id
       WHERE gd.id_nguoi_gui = ? OR gd.id_nguoi_nhan = ?
       ORDER BY gd.created_at DESC
-      LIMIT ? OFFSET ?
-    `, [userId, userId, limit, offset])
+      LIMIT ${limitInt} OFFSET ${offset}
+    `, [userId, userId])
     
     return {
       data: rows,
       pagination: {
-        page,
-        limit,
+        page: pageInt,
+        limit: limitInt,
         total,
-        totalPages: Math.ceil(total / limit)
+        totalPages: Math.ceil(total / limitInt)
       }
     }
   }

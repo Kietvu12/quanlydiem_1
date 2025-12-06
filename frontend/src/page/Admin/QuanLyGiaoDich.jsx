@@ -594,26 +594,65 @@ const QuanLyGiaoDich = () => {
         }
       } else {
         // TRƯỜNG HỢP 2: 1 tin nhắn không có timestamp
-        // Kiểm tra xem có "san" hoặc "San" ở đầu không
+        // Kiểm tra xem có "san" hoặc "San" ở bất kỳ đâu không
         if (!sanPattern.test(line)) {
           i++
           continue
         }
         
-        // Tìm mention
-        const mentionMatch = line.match(mentionPattern)
-        if (!mentionMatch) {
+        // Tìm tất cả các vị trí có @
+        const mentionPositions = []
+        for (let pos = 0; pos < line.length; pos++) {
+          if (line[pos] === '@') {
+            mentionPositions.push(pos)
+          }
+        }
+        
+        if (mentionPositions.length === 0) {
           i++
           continue
         }
         
-        const mentionedName = mentionMatch[1]
+        // Lấy mention cuối cùng (thường là người nhận)
+        const lastMentionPos = mentionPositions[mentionPositions.length - 1]
+        let mentionEnd = lastMentionPos + 1
+        let mentionStart = mentionEnd
         
-        // Tìm số điểm (có thể có "đ" hoặc "d" ở cuối)
+        // Lấy tên sau @ cho đến khi gặp số, @ khác, hoặc kết thúc
+        while (mentionEnd < line.length) {
+          const char = line[mentionEnd]
+          // Dừng khi gặp @ khác
+          if (char === '@') {
+            break
+          }
+          // Dừng khi gặp số (nhưng chỉ sau khoảng trắng hoặc ở đầu)
+          if (/[\d]/.test(char)) {
+            // Nếu số ở ngay sau @ hoặc sau khoảng trắng, dừng
+            if (mentionEnd === lastMentionPos + 1 || line[mentionEnd - 1] === ' ') {
+              break
+            }
+          }
+          // Cho phép khoảng trắng, chữ, dấu câu trong tên
+          if (/[\s\wÀ-ỹ.,\-]/.test(char)) {
+            mentionEnd++
+          } else {
+            break
+          }
+        }
+        
+        const mentionedName = line.substring(lastMentionPos + 1, mentionEnd).trim()
+        
+        if (!mentionedName) {
+          i++
+          continue
+        }
+        
+        // Tìm số điểm (có thể có "đ" hoặc "d" ở cuối, có thể ở bất kỳ đâu sau mention)
         let soDiem = 0
+        // Tìm tất cả số điểm trong line
         const allPointMatches = line.match(/(-?\d+[.,]?\d*)\s*[đd]?/gi)
         if (allPointMatches && allPointMatches.length > 0) {
-          // Lấy số điểm cuối cùng
+          // Lấy số điểm cuối cùng (thường là số điểm giao dịch)
           const lastPoint = allPointMatches[allPointMatches.length - 1]
           soDiem = parseFloat(lastPoint.replace(/[đd\s]/gi, '').replace(',', '.')) || 0
         }
@@ -633,16 +672,23 @@ const QuanLyGiaoDich = () => {
         // Tìm người nhận từ mention
         const nguoiNhan = findUserByName(mentionedName)
         if (!nguoiNhan) {
+          console.warn('Không tìm thấy người nhận:', mentionedName)
           i++
           continue
         }
         
         // Tạo giao dịch
+        // Lấy nội dung (bỏ "san" và các từ liên quan, mention, số điểm)
+        let noiDung = line
+        noiDung = noiDung.replace(/\b(san|cho|kt|nhe|tks)\b/gi, '').trim()
+        noiDung = noiDung.replace(/@[^@\s]+/g, '').trim()
+        noiDung = noiDung.replace(/(-?\d+[.,]?\d*)\s*[đd]?$/i, '').trim()
+        
         transactions.push({
           id_nguoi_gui: defaultSenderUser.id,
           id_nguoi_nhan: nguoiNhan.id,
           so_diem_giao_dich: soDiem,
-          noi_dung_giao_dich: line.replace(sanPattern, '').trim()
+          noi_dung_giao_dich: noiDung || null
         })
         
         i++

@@ -36,8 +36,8 @@ const Login = ({ onLogin }) => {
         if (onLogin) {
           onLogin(response.data)
         }
-        // Navigate to admin page
-        navigate('/quan-ly-nguoi-dung')
+        // Navigate to transaction management page
+        navigate('/quan-ly-giao-dich')
       } else {
         setError(response.message || 'Đăng nhập thất bại')
       }

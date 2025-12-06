@@ -3,12 +3,15 @@ import pool from '../config/db.js'
 class UserModel {
   // Lấy tất cả người dùng với pagination
   static async getAll(page = 1, limit = 60) {
-    const offset = (page - 1) * limit
+    // Đảm bảo page và limit là số nguyên và hợp lệ
+    const pageInt = Math.max(1, parseInt(page, 10) || 1)
+    const limitInt = Math.max(1, Math.min(100, parseInt(limit, 10) || 60))
+    const offset = (pageInt - 1) * limitInt
     
-    // Lấy dữ liệu
+    // MySQL không hỗ trợ placeholders cho LIMIT và OFFSET, phải chèn trực tiếp
+    // Đã validate ở trên nên an toàn
     const [rows] = await pool.execute(
-      'SELECT id, ten_zalo, sdt, so_diem, la_admin, created_at, updated_at FROM nguoi_dung ORDER BY id DESC LIMIT ? OFFSET ?',
-      [limit, offset]
+      `SELECT id, ten_zalo, sdt, so_diem, la_admin, created_at, updated_at FROM nguoi_dung ORDER BY id DESC LIMIT ${limitInt} OFFSET ${offset}`
     )
     
     // Đếm tổng số records
@@ -20,10 +23,10 @@ class UserModel {
     return {
       data: rows,
       pagination: {
-        page,
-        limit,
+        page: pageInt,
+        limit: limitInt,
         total,
-        totalPages: Math.ceil(total / limit)
+        totalPages: Math.ceil(total / limitInt)
       }
     }
   }

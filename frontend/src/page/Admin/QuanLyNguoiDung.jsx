@@ -529,10 +529,13 @@ const QuanLyNguoiDung = ({ isAuthenticated = false, isAdmin = false, onLogout })
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-xl sm:text-2xl md:text-3xl font-raleway-bold text-gray-800 mb-1 sm:mb-2">
-            Quản lý người dùng
+            {isAuthenticated && isAdmin ? 'Quản lý người dùng' : 'ROOM VIP FULL HOUSE'}
           </h1>
           <p className="text-sm sm:text-base text-gray-600 font-raleway-regular">
-            Quản lý và theo dõi người dùng trong hệ thống
+            {isAuthenticated && isAdmin 
+              ? 'Quản lý và theo dõi người dùng trong hệ thống'
+              : 'Danh sách thành viên và điểm số'
+            }
           </p>
         </div>
         {isAuthenticated && isAdmin ? (
@@ -626,9 +629,11 @@ const QuanLyNguoiDung = ({ isAuthenticated = false, isAdmin = false, onLogout })
                   <th className="hidden lg:table-cell px-2 sm:px-3 md:px-4 lg:px-6 py-2 sm:py-2.5 md:py-3 text-left text-[10px] sm:text-xs font-raleway-semibold text-gray-600 uppercase tracking-wider">
                     Tiền
                   </th>
-                  <th className="px-2 sm:px-3 md:px-4 lg:px-6 py-2 sm:py-2.5 md:py-3 text-left text-[10px] sm:text-xs font-raleway-semibold text-gray-600 uppercase tracking-wider">
-                    Thao tác
-                  </th>
+                  {isAuthenticated && isAdmin && (
+                    <th className="px-2 sm:px-3 md:px-4 lg:px-6 py-2 sm:py-2.5 md:py-3 text-left text-[10px] sm:text-xs font-raleway-semibold text-gray-600 uppercase tracking-wider">
+                      Thao tác
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
