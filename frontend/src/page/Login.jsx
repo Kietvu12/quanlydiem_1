@@ -56,10 +56,10 @@ const Login = ({ onLogin }) => {
         <div className="bg-white rounded-2xl shadow-xl p-8 animate-fadeIn">
           {/* Logo/Title Section */}
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-raleway-bold text-gray-800 mb-2">
+            <h1 className="text-3xl font-bold text-gray-800 mb-2">
               Đăng nhập
             </h1>
-            <p className="text-gray-600 font-raleway-medium">
+            <p className="text-gray-600 font-medium">
               Chào mừng bạn trở lại
             </p>
           </div>
@@ -68,7 +68,7 @@ const Login = ({ onLogin }) => {
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Error Message */}
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg font-raleway-medium text-sm">
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg font-medium text-sm">
                 {error}
               </div>
             )}
@@ -77,7 +77,7 @@ const Login = ({ onLogin }) => {
             <div>
               <label 
                 htmlFor="ten_zalo" 
-                className="block text-sm font-raleway-semibold text-gray-700 mb-2"
+                className="block text-sm font-semibold text-gray-700 mb-2"
               >
                 Tên Zalo
               </label>
@@ -89,7 +89,7 @@ const Login = ({ onLogin }) => {
                 onChange={handleChange}
                 required
                 disabled={loading}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all font-raleway-regular text-gray-800 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all font-sans text-gray-800 disabled:bg-gray-100 disabled:cursor-not-allowed"
                 placeholder="Nhập tên Zalo của bạn"
               />
             </div>
@@ -98,7 +98,7 @@ const Login = ({ onLogin }) => {
             <div>
               <label 
                 htmlFor="mat_khau" 
-                className="block text-sm font-raleway-semibold text-gray-700 mb-2"
+                className="block text-sm font-semibold text-gray-700 mb-2"
               >
                 Mật khẩu
               </label>
@@ -111,7 +111,7 @@ const Login = ({ onLogin }) => {
                   onChange={handleChange}
                   required
                   disabled={loading}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all font-raleway-regular text-gray-800 pr-12 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all font-sans text-gray-800 pr-12 disabled:bg-gray-100 disabled:cursor-not-allowed"
                   placeholder="Nhập mật khẩu của bạn"
                 />
                 <button
@@ -140,13 +140,13 @@ const Login = ({ onLogin }) => {
                   type="checkbox"
                   className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary focus:ring-2"
                 />
-                <span className="ml-2 text-sm font-raleway-medium text-gray-700">
+                <span className="ml-2 text-sm font-medium text-gray-700">
                   Ghi nhớ đăng nhập
                 </span>
               </label>
               <a
                 href="#"
-                className="text-sm font-raleway-semibold text-primary hover:text-primary-dark transition-colors"
+                className="text-sm font-semibold text-primary hover:text-primary-dark transition-colors"
               >
                 Quên mật khẩu?
               </a>
@@ -157,14 +157,14 @@ const Login = ({ onLogin }) => {
               <button
                 type="button"
                 onClick={() => navigate('/quan-ly-nguoi-dung')}
-                className="flex-1 border border-gray-300 text-gray-700 font-raleway-semibold py-3 px-4 rounded-lg transition-all duration-200 hover:bg-gray-50 shadow-sm hover:shadow-md"
+                className="flex-1 border border-gray-300 text-gray-700 font-semibold py-3 px-4 rounded-lg transition-all duration-200 hover:bg-gray-50 shadow-sm hover:shadow-md"
               >
                 Quay lại
               </button>
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-1 bg-primary hover:bg-primary-dark text-white font-raleway-semibold py-3 px-4 rounded-lg transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98] shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center"
+                className="flex-1 bg-primary hover:bg-primary-dark text-white font-semibold py-3 px-4 rounded-lg transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98] shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center"
               >
                 {loading ? (
                   <>
@@ -184,15 +184,15 @@ const Login = ({ onLogin }) => {
           {/* Divider */}
           <div className="my-6 flex items-center">
             <div className="flex-1 border-t border-gray-300"></div>
-            <span className="px-4 text-sm text-gray-500 font-raleway-medium">hoặc</span>
+            <span className="px-4 text-sm text-gray-500 font-medium">hoặc</span>
             <div className="flex-1 border-t border-gray-300"></div>
           </div>
 
           {/* Additional Links */}
           <div className="text-center">
-            <p className="text-sm text-gray-600 font-raleway-regular">
+            <p className="text-sm text-gray-600 font-sans">
               Chưa có tài khoản?{' '}
-              <a href="#" className="text-primary font-raleway-semibold hover:text-primary-dark transition-colors">
+              <a href="#" className="text-primary font-semibold hover:text-primary-dark transition-colors">
                 Đăng ký ngay
               </a>
             </p>
@@ -200,7 +200,7 @@ const Login = ({ onLogin }) => {
         </div>
 
         {/* Footer */}
-        <p className="text-center text-sm text-gray-500 mt-6 font-raleway-regular">
+        <p className="text-center text-sm text-gray-500 mt-6 font-sans">
           © 2024 Quản lý điểm. Tất cả quyền được bảo lưu.
         </p>
       </div>

@@ -243,6 +243,17 @@ class UserController {
         })
       }
 
+      // Kiểm tra xem người dùng có giao dịch liên quan không
+      const TransactionModel = (await import('../models/TransactionModel.js')).default
+      const userTransactions = await TransactionModel.getByUserId(id, 1, 1)
+      
+      if (userTransactions.data && userTransactions.data.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Không thể xóa người dùng này vì họ có ${userTransactions.pagination?.total || 'nhiều'} giao dịch liên quan. Vui lòng xóa tất cả giao dịch trước khi xóa người dùng.`
+        })
+      }
+
       const deleted = await UserModel.delete(id)
 
       if (deleted) {
@@ -258,6 +269,15 @@ class UserController {
       }
     } catch (error) {
       console.error('Delete user error:', error)
+      
+      // Kiểm tra nếu lỗi là do foreign key constraint (RESTRICT)
+      if (error.code === 'ER_ROW_IS_REFERENCED_2' || error.message.includes('foreign key constraint')) {
+        return res.status(400).json({
+          success: false,
+          message: 'Không thể xóa người dùng này vì họ có giao dịch liên quan. Vui lòng xóa tất cả giao dịch trước khi xóa người dùng.'
+        })
+      }
+      
       res.status(500).json({
         success: false,
         message: 'Lỗi khi xóa người dùng',

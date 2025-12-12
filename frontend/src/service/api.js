@@ -306,6 +306,33 @@ export const transactionAPI = {
       body: transactionData
     })
   },
+
+  // Xóa giao dịch
+  delete: async (id) => {
+    if (!id) {
+      throw new Error('ID giao dịch là bắt buộc')
+    }
+    return await apiCall(`/transactions/${id}`, {
+      method: 'DELETE'
+    })
+  },
+
+  // Chốt giao dịch (chuyển từ chưa chốt sang đã chốt)
+  chotGiaoDich: async (id) => {
+    if (!id) {
+      throw new Error('ID giao dịch là bắt buộc')
+    }
+    return await apiCall(`/transactions/${id}/chot`, {
+      method: 'PATCH'
+    })
+  },
+
+  // Chốt tất cả giao dịch "Giao lịch" chưa chốt
+  chotTatCaGiaoDich: async () => {
+    return await apiCall('/transactions/chot-tat-ca', {
+      method: 'PATCH'
+    })
+  }
 }
 
 // ==================== REPORTS API ====================

@@ -32,9 +32,29 @@ const QuanLyGiaoDich = () => {
       id_nguoi_nhan: '',
       id_loai_giao_dich: '',
       so_diem_giao_dich: '',
-      noi_dung_giao_dich: ''
+      noi_dung_giao_dich: '',
+      nguoi_gui_text: '',
+      nguoi_nhan_text: ''
     }
   ])
+  
+  // State cho autocomplete
+  const [autocompleteState, setAutocompleteState] = useState({
+    rowId: null,
+    field: null, // 'nguoi_gui' or 'nguoi_nhan'
+    isOpen: false
+  })
+  
+  // State cho autocomplete trong modal edit
+  const [editAutocompleteState, setEditAutocompleteState] = useState({
+    field: null,
+    isOpen: false
+  })
+  
+  const [editFormText, setEditFormText] = useState({
+    nguoi_gui_text: '',
+    nguoi_nhan_text: ''
+  })
   
   // Textarea cho parse tin nhắn
   const [giaoLichText, setGiaoLichText] = useState('')
@@ -43,6 +63,10 @@ const QuanLyGiaoDich = () => {
   // Refs cho debounce timers
   const giaoLichTimerRef = useRef(null)
   const sanDiemTimerRef = useRef(null)
+  
+  // Refs cho autocomplete dropdown
+  const autocompleteRefs = useRef({})
+  const editAutocompleteRefs = useRef({})
   
   // Lưu lại các text đã parse để tránh parse lại (dùng Set để lưu nhiều text)
   const parsedGiaoLichTextsRef = useRef(new Set())
@@ -54,6 +78,7 @@ const QuanLyGiaoDich = () => {
   
   // Filters
   const [filterLoaiGiaoDich, setFilterLoaiGiaoDich] = useState('all') // 'all', '1', '2', '3'
+  const [filterTrangThai, setFilterTrangThai] = useState('all') // 'all', 'chua_chot', 'da_chot'
   const [filterDateFrom, setFilterDateFrom] = useState('')
   const [filterDateTo, setFilterDateTo] = useState('')
   const [searchTerm, setSearchTerm] = useState('') // Tìm kiếm theo nội dung
@@ -216,6 +241,60 @@ const QuanLyGiaoDich = () => {
       )
     )
   }
+  
+  // Lọc users dựa trên search text
+  const filterUsers = (searchText) => {
+    if (!searchText || !searchText.trim()) return users
+    const search = searchText.toLowerCase().trim()
+    return users.filter(user => 
+      user.ten_zalo?.toLowerCase().includes(search)
+    )
+  }
+  
+  // Handle input change cho autocomplete
+  const handleAutocompleteInputChange = (rowId, field, value) => {
+    const textField = field === 'id_nguoi_gui' ? 'nguoi_gui_text' : 'nguoi_nhan_text'
+    setTransactionRows(rows =>
+      rows.map(row =>
+        row.id === rowId ? { ...row, [textField]: value, [field]: '' } : row
+      )
+    )
+    setAutocompleteState({
+      rowId,
+      field,
+      isOpen: value.trim().length > 0
+    })
+  }
+  
+  // Handle select user từ dropdown
+  const handleSelectUser = (rowId, field, user) => {
+    const textField = field === 'id_nguoi_gui' ? 'nguoi_gui_text' : 'nguoi_nhan_text'
+    setTransactionRows(rows =>
+      rows.map(row =>
+        row.id === rowId ? { ...row, [textField]: user.ten_zalo, [field]: user.id.toString() } : row
+      )
+    )
+    setAutocompleteState({ rowId: null, field: null, isOpen: false })
+  }
+  
+  // Handle input change cho edit modal autocomplete
+  const handleEditAutocompleteInputChange = (field, value) => {
+    const textField = field === 'id_nguoi_gui' ? 'nguoi_gui_text' : 'nguoi_nhan_text'
+    setEditFormText(prev => ({ ...prev, [textField]: value }))
+    setEditForm(prev => ({ ...prev, [field]: '' }))
+    setEditAutocompleteState({
+      field,
+      isOpen: value.trim().length > 0
+    })
+  }
+  
+  // Handle select user trong edit modal
+  const handleEditSelectUser = (field, user) => {
+    const textField = field === 'id_nguoi_gui' ? 'nguoi_gui_text' : 'nguoi_nhan_text'
+    setEditFormText(prev => ({ ...prev, [textField]: user.ten_zalo }))
+    setEditForm(prev => ({ ...prev, [field]: user.id.toString() }))
+    setEditAutocompleteState({ field: null, isOpen: false })
+  }
 
   // Thêm hàng mới
   const handleAddRow = () => {
@@ -226,9 +305,36 @@ const QuanLyGiaoDich = () => {
       id_nguoi_nhan: '',
       id_loai_giao_dich: '',
       so_diem_giao_dich: '',
-      noi_dung_giao_dich: ''
+      noi_dung_giao_dich: '',
+      nguoi_gui_text: '',
+      nguoi_nhan_text: ''
     }])
   }
+  
+  // Handle click outside để đóng autocomplete dropdown
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      // Check for main form autocomplete
+      if (autocompleteState.isOpen) {
+        const refKey = `${autocompleteState.rowId}_${autocompleteState.field}`
+        const ref = autocompleteRefs.current[refKey]
+        if (ref && !ref.contains(event.target)) {
+          setAutocompleteState({ rowId: null, field: null, isOpen: false })
+        }
+      }
+      
+      // Check for edit modal autocomplete
+      if (editAutocompleteState.isOpen) {
+        const ref = editAutocompleteRefs.current[editAutocompleteState.field]
+        if (ref && !ref.contains(event.target)) {
+          setEditAutocompleteState({ field: null, isOpen: false })
+        }
+      }
+    }
+    
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [autocompleteState, editAutocompleteState])
 
   // Xóa hàng
   const handleRemoveRow = (rowId) => {
@@ -297,6 +403,8 @@ const QuanLyGiaoDich = () => {
         
         setTransactionRows(rows => {
           // Điền giao dịch đầu tiên vào hàng đầu
+          const firstTxNguoiGui = users.find(u => u.id === firstTx.id_nguoi_gui)
+          const firstTxNguoiNhan = users.find(u => u.id === firstTx.id_nguoi_nhan)
           const updatedRows = rows.map((row, index) => 
             index === 0 ? {
               ...row,
@@ -304,21 +412,29 @@ const QuanLyGiaoDich = () => {
               id_nguoi_nhan: firstTx.id_nguoi_nhan.toString(),
               id_loai_giao_dich: '2', // ID của "Giao lịch"
               so_diem_giao_dich: firstTx.so_diem_giao_dich.toString(),
-              noi_dung_giao_dich: firstTx.noi_dung_giao_dich || ''
+              noi_dung_giao_dich: firstTx.noi_dung_giao_dich || '',
+              nguoi_gui_text: firstTxNguoiGui?.ten_zalo || '',
+              nguoi_nhan_text: firstTxNguoiNhan?.ten_zalo || ''
             } : row
           )
           
           // Nếu còn giao dịch khác, tạo hàng mới cho chúng
           if (remainingTxs.length > 0) {
             const maxId = rows.length > 0 ? Math.max(...rows.map(r => r.id), 0) : 0
-            const newRows = remainingTxs.map((tx, index) => ({
-              id: maxId + index + 1,
-              id_nguoi_gui: tx.id_nguoi_gui.toString(),
-              id_nguoi_nhan: tx.id_nguoi_nhan.toString(),
-              id_loai_giao_dich: '2', // ID của "Giao lịch"
-              so_diem_giao_dich: tx.so_diem_giao_dich.toString(),
-              noi_dung_giao_dich: tx.noi_dung_giao_dich || ''
-            }))
+            const newRows = remainingTxs.map((tx, index) => {
+              const nguoiGui = users.find(u => u.id === tx.id_nguoi_gui)
+              const nguoiNhan = users.find(u => u.id === tx.id_nguoi_nhan)
+              return {
+                id: maxId + index + 1,
+                id_nguoi_gui: tx.id_nguoi_gui.toString(),
+                id_nguoi_nhan: tx.id_nguoi_nhan.toString(),
+                id_loai_giao_dich: '2', // ID của "Giao lịch"
+                so_diem_giao_dich: tx.so_diem_giao_dich.toString(),
+                noi_dung_giao_dich: tx.noi_dung_giao_dich || '',
+                nguoi_gui_text: nguoiGui?.ten_zalo || '',
+                nguoi_nhan_text: nguoiNhan?.ten_zalo || ''
+              }
+            })
             return [...updatedRows, ...newRows]
           }
           
@@ -328,14 +444,20 @@ const QuanLyGiaoDich = () => {
         // Nếu hàng đầu không trống, tạo hàng mới cho tất cả giao dịch
         setTransactionRows(rows => {
           const maxId = rows.length > 0 ? Math.max(...rows.map(r => r.id), 0) : 0
-          const newRows = parsed.map((tx, index) => ({
-            id: maxId + index + 1,
-            id_nguoi_gui: tx.id_nguoi_gui.toString(),
-            id_nguoi_nhan: tx.id_nguoi_nhan.toString(),
-            id_loai_giao_dich: '2', // ID của "Giao lịch"
-            so_diem_giao_dich: tx.so_diem_giao_dich.toString(),
-            noi_dung_giao_dich: tx.noi_dung_giao_dich || ''
-          }))
+          const newRows = parsed.map((tx, index) => {
+            const nguoiGui = users.find(u => u.id === tx.id_nguoi_gui)
+            const nguoiNhan = users.find(u => u.id === tx.id_nguoi_nhan)
+            return {
+              id: maxId + index + 1,
+              id_nguoi_gui: tx.id_nguoi_gui.toString(),
+              id_nguoi_nhan: tx.id_nguoi_nhan.toString(),
+              id_loai_giao_dich: '2', // ID của "Giao lịch"
+              so_diem_giao_dich: tx.so_diem_giao_dich.toString(),
+              noi_dung_giao_dich: tx.noi_dung_giao_dich || '',
+              nguoi_gui_text: nguoiGui?.ten_zalo || '',
+              nguoi_nhan_text: nguoiNhan?.ten_zalo || ''
+            }
+          })
           
           // Thêm vào cuối danh sách
           return [...rows, ...newRows]
@@ -377,6 +499,8 @@ const QuanLyGiaoDich = () => {
         
         setTransactionRows(rows => {
           // Điền giao dịch đầu tiên vào hàng đầu
+          const firstTxNguoiGui = users.find(u => u.id === firstTx.id_nguoi_gui)
+          const firstTxNguoiNhan = users.find(u => u.id === firstTx.id_nguoi_nhan)
           const updatedRows = rows.map((row, index) => 
             index === 0 ? {
               ...row,
@@ -384,21 +508,29 @@ const QuanLyGiaoDich = () => {
               id_nguoi_nhan: firstTx.id_nguoi_nhan.toString(),
               id_loai_giao_dich: '1', // ID của "San điểm"
               so_diem_giao_dich: firstTx.so_diem_giao_dich.toString(),
-              noi_dung_giao_dich: firstTx.noi_dung_giao_dich || ''
+              noi_dung_giao_dich: firstTx.noi_dung_giao_dich || '',
+              nguoi_gui_text: firstTxNguoiGui?.ten_zalo || '',
+              nguoi_nhan_text: firstTxNguoiNhan?.ten_zalo || ''
             } : row
           )
           
           // Nếu còn giao dịch khác, tạo hàng mới cho chúng
           if (remainingTxs.length > 0) {
             const maxId = rows.length > 0 ? Math.max(...rows.map(r => r.id), 0) : 0
-            const newRows = remainingTxs.map((tx, index) => ({
-              id: maxId + index + 1,
-              id_nguoi_gui: tx.id_nguoi_gui.toString(),
-              id_nguoi_nhan: tx.id_nguoi_nhan.toString(),
-              id_loai_giao_dich: '1', // ID của "San điểm"
-              so_diem_giao_dich: tx.so_diem_giao_dich.toString(),
-              noi_dung_giao_dich: tx.noi_dung_giao_dich || ''
-            }))
+            const newRows = remainingTxs.map((tx, index) => {
+              const nguoiGui = users.find(u => u.id === tx.id_nguoi_gui)
+              const nguoiNhan = users.find(u => u.id === tx.id_nguoi_nhan)
+              return {
+                id: maxId + index + 1,
+                id_nguoi_gui: tx.id_nguoi_gui.toString(),
+                id_nguoi_nhan: tx.id_nguoi_nhan.toString(),
+                id_loai_giao_dich: '1', // ID của "San điểm"
+                so_diem_giao_dich: tx.so_diem_giao_dich.toString(),
+                noi_dung_giao_dich: tx.noi_dung_giao_dich || '',
+                nguoi_gui_text: nguoiGui?.ten_zalo || '',
+                nguoi_nhan_text: nguoiNhan?.ten_zalo || ''
+              }
+            })
             return [...updatedRows, ...newRows]
           }
           
@@ -408,14 +540,20 @@ const QuanLyGiaoDich = () => {
         // Nếu hàng đầu không trống, tạo hàng mới cho tất cả giao dịch
         setTransactionRows(rows => {
           const maxId = rows.length > 0 ? Math.max(...rows.map(r => r.id), 0) : 0
-          const newRows = parsed.map((tx, index) => ({
-            id: maxId + index + 1,
-            id_nguoi_gui: tx.id_nguoi_gui.toString(),
-            id_nguoi_nhan: tx.id_nguoi_nhan.toString(),
-            id_loai_giao_dich: '1', // ID của "San điểm"
-            so_diem_giao_dich: tx.so_diem_giao_dich.toString(),
-            noi_dung_giao_dich: tx.noi_dung_giao_dich || ''
-          }))
+          const newRows = parsed.map((tx, index) => {
+            const nguoiGui = users.find(u => u.id === tx.id_nguoi_gui)
+            const nguoiNhan = users.find(u => u.id === tx.id_nguoi_nhan)
+            return {
+              id: maxId + index + 1,
+              id_nguoi_gui: tx.id_nguoi_gui.toString(),
+              id_nguoi_nhan: tx.id_nguoi_nhan.toString(),
+              id_loai_giao_dich: '1', // ID của "San điểm"
+              so_diem_giao_dich: tx.so_diem_giao_dich.toString(),
+              noi_dung_giao_dich: tx.noi_dung_giao_dich || '',
+              nguoi_gui_text: nguoiGui?.ten_zalo || '',
+              nguoi_nhan_text: nguoiNhan?.ten_zalo || ''
+            }
+          })
           
           // Thêm vào cuối danh sách
           return [...rows, ...newRows]
@@ -669,7 +807,9 @@ const QuanLyGiaoDich = () => {
           id_nguoi_nhan: '',
           id_loai_giao_dich: '',
           so_diem_giao_dich: '',
-          noi_dung_giao_dich: ''
+          noi_dung_giao_dich: '',
+          nguoi_gui_text: '',
+          nguoi_nhan_text: ''
         }])
         setGiaoLichText('')
         setSanDiemText('')
@@ -702,7 +842,7 @@ const QuanLyGiaoDich = () => {
     return user || null
   }
 
-  // Parse tin nhắn để tạo giao dịch "Giao lịch"
+  // Parse tin nhắn để tạo giao dịch "Giao lịch" (CHỈ CẦN 2 TIN NHẮN)
   const parseChatMessages = (text) => {
     const lines = text.split('\n').filter(line => line.trim())
     const transactions = []
@@ -710,8 +850,6 @@ const QuanLyGiaoDich = () => {
     // Regex patterns
     const messagePattern = /^\[(\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}:\d{2})\]\s+(.+?):\s+(.+)$/
     const pointPattern = /(-?\d+[.,]\d+|-?\d+)$/
-    const mentionPattern = /@([^@\s]+)/
-    const confirmPattern = /^(ok|oke|oki|okay|okê|okì|okey|okey|okie|okey|okay|okê|okì|okie)$/i
     
     let i = 0
     while (i < lines.length) {
@@ -721,7 +859,7 @@ const QuanLyGiaoDich = () => {
         continue
       }
       
-      // Parse tin nhắn 1: [@ngày giờ] Tên: Nội dung + số điểm
+      // Parse tin nhắn 1: [@ngày giờ] Người A: Nội dung + số điểm
       const match1 = line1.match(messagePattern)
       if (!match1) {
         i++
@@ -730,25 +868,111 @@ const QuanLyGiaoDich = () => {
       
       const [, time1, name1, content1] = match1
       
-      // Tìm số điểm ở cuối content1
-      const pointMatch = content1.match(pointPattern)
+      // Tìm số điểm trong content1
+      // Ưu tiên 1: Số điểm có dấu "/" phía trước (như "Ck220k/0,25" hoặc "/0,5" hoặc "/1đ")
+      // Đây là pattern phổ biến nhất: giá tiền/số điểm
+      let pointMatch = null
+      const slashPointRegex = /\/(\d+[.,]?\d*)\s*[đd]?(?:\s|\.|,|$)/i
+      const slashPointExec = slashPointRegex.exec(content1)
+      if (slashPointExec) {
+        // Tạo match object giống format của match()
+        // pointMatch[0] là toàn bộ match bao gồm dấu /, pointMatch[1] là số điểm (không có đ/d)
+        // pointMatch.index là index của dấu / (đầu match)
+        pointMatch = {
+          0: slashPointExec[0], // "/0,25." hoặc "/0,25" hoặc "/1đ."
+          1: slashPointExec[1], // "0,25" hoặc "0" hoặc "1" (đã bỏ đ/d)
+          index: slashPointExec.index, // index của dấu /
+          input: content1
+        }
+      }
+      
+      // Ưu tiên 2: Số điểm ở đầu câu (sau tên người, trước dấu phẩy hoặc khoảng trắng)
+      // Ví dụ: "0,75 ,,    Sảnh t2..." hoặc "0,5/ lịch18h10"
+      if (!pointMatch) {
+        const startMatch = content1.match(/^(-?\d+[.,]\d+|-?\d+)\s*[,/]/)
+        if (startMatch) {
+          pointMatch = startMatch
+        }
+      }
+      
+      // Ưu tiên 3: Số điểm có dấu "/" phía sau (như "0,5/")
+      if (!pointMatch) {
+        const afterSlashMatch = content1.match(/(-?\d+[.,]\d+|-?\d+)\s*\//)
+        if (afterSlashMatch) {
+          pointMatch = afterSlashMatch
+        }
+      }
+      
+      // Ưu tiên 4: Số điểm ở cuối câu (nhưng bỏ qua số có "k" hoặc chữ cái - đó là giá tiền hoặc mã)
+      if (!pointMatch) {
+        // Tìm tất cả số điểm trong câu
+        const allPoints = content1.matchAll(/(-?\d+[.,]\d+|-?\d+)/g)
+        let lastPoint = null
+        for (const match of allPoints) {
+          // Bỏ qua số có "k" phía sau (như "250k" - đó là giá tiền)
+          const afterMatch = content1.substring(match.index + match[0].length).trim()
+          // Bỏ qua số có chữ cái phía trước (như "Vf5" - đó là mã, không phải điểm)
+          const beforeMatch = content1.substring(Math.max(0, match.index - 1), match.index)
+          
+          if (!afterMatch.match(/^k/i) && !/[a-zA-ZÀ-ỹ]$/.test(beforeMatch)) {
+            lastPoint = match
+          }
+        }
+        if (lastPoint) {
+          // Kiểm tra xem số điểm này có ở cuối câu không
+          const afterLastPoint = content1.substring(lastPoint.index + lastPoint[0].length).trim()
+          if (!afterLastPoint || afterLastPoint.length < 3) {
+            pointMatch = lastPoint
+          }
+        }
+      }
+      
       if (!pointMatch) {
         i++
         continue
       }
       
       const soDiem = parseFloat(pointMatch[1].replace(',', '.')) || 0
-      const noiDung = content1.substring(0, pointMatch.index).trim()
       
-      // Tìm user từ name1
+      // Lấy nội dung: bỏ số điểm và các dấu phẩy/dấu "/" phía sau
+      let noiDung = content1.substring(0, pointMatch.index).trim()
+      let afterPoint = content1.substring(pointMatch.index + pointMatch[0].length).trim()
+      
+      // Bỏ các dấu phẩy kép ",," hoặc dấu phẩy đơn và khoảng trắng ở đầu phần sau
+      afterPoint = afterPoint.replace(/^,+\s*/, '').trim()
+      
+      // Bỏ số có "k" ở cuối (như "250k" - đó là giá tiền, không phải điểm)
+      afterPoint = afterPoint.replace(/\s*\d+[.,]?\d*\s*k\s*$/i, '').trim()
+      
+      // Bỏ dấu phẩy kép ",," ở giữa hoặc cuối (thay bằng khoảng trắng)
+      afterPoint = afterPoint.replace(/\s*,{2,}\s*/g, ' ').trim()
+      
+      // Ghép nội dung
+      if (afterPoint) {
+        noiDung = (noiDung + ' ' + afterPoint).trim()
+      }
+      
+      // Nếu nội dung rỗng, lấy toàn bộ content1 (trừ số điểm)
+      if (!noiDung) {
+        noiDung = content1.replace(pointMatch[0], '').trim()
+        // Bỏ dấu phẩy kép ",," hoặc dấu phẩy đơn ở đầu
+        noiDung = noiDung.replace(/^,+\s*/, '').trim()
+        // Bỏ số có "k" ở cuối
+        noiDung = noiDung.replace(/\s*\d+[.,]?\d*\s*k\s*$/i, '').trim()
+        // Bỏ dấu phẩy kép ",," ở giữa hoặc cuối
+        noiDung = noiDung.replace(/\s*,{2,}\s*/g, ' ').trim()
+      }
+      
+      // Tìm user từ name1 (người gửi/người giao)
       const nguoiGiao = findUserByName(name1)
       if (!nguoiGiao) {
         i++
         continue
       }
       
-      // Tìm tin nhắn 2: [@ngày giờ] Tên khác: @Tên từ tin nhắn 1 + xác nhận [+ số điểm]
+      // Tìm tin nhắn 2: [@ngày giờ] Người B: @Người A [+ số điểm deal lại]
       let nguoiNhan = null
+      let soDiemFinal = soDiem
       let j = i + 1
       
       while (j < lines.length && j < i + 5) { // Tìm trong 5 dòng tiếp theo
@@ -769,77 +993,45 @@ const QuanLyGiaoDich = () => {
         // Kiểm tra xem có mention đến name1 không
         const mentions = content2.match(new RegExp(`@${name1.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i'))
         if (mentions) {
-          // Tìm user từ name2
+          // Tìm user từ name2 (người nhận)
           const user2 = findUserByName(name2)
           if (user2 && user2.id !== nguoiGiao.id) {
             nguoiNhan = user2
             
-            // Tìm số điểm deal lại trong tin nhắn 2 (nếu có)
-            let soDiemFinal = soDiem // Mặc định dùng số điểm từ tin nhắn 1
-            const pointMatch2 = content2.match(pointPattern)
+            // Kiểm tra xem có số điểm deal lại trong tin nhắn 2 không
+            // Tìm số điểm (có thể có "k" phía sau như "0k")
+            let pointMatch2 = content2.match(/(-?\d+[.,]\d+|-?\d+)\s*k\s*$/i) // Số điểm có "k" ở cuối
+            if (!pointMatch2) {
+              pointMatch2 = content2.match(pointPattern) // Số điểm ở cuối không có "k"
+            }
             if (pointMatch2) {
-              // Có số điểm deal lại trong tin nhắn 2, dùng số điểm đó
-              soDiemFinal = parseFloat(pointMatch2[1].replace(',', '.')) || soDiem
+              // Có số điểm deal lại, sử dụng số điểm này (bỏ "k" nếu có)
+              const pointValue = pointMatch2[1].replace(/k/i, '').replace(',', '.')
+              soDiemFinal = parseFloat(pointValue) || soDiem
             }
             
-            // Tìm tin nhắn 3: [@ngày giờ] Tên từ tin nhắn 1: @Tên từ tin nhắn 2 + xác nhận
-            let k = j + 1
-            let foundConfirm = false
+            // Tạo giao dịch ngay với 2 tin nhắn (trạng thái mặc định: chưa chốt)
+            // Chỉ lưu nội dung tin nhắn đầu tiên (không có timestamp và tên người gửi)
+            // content1 đã được extract từ regex, chỉ chứa nội dung sau dấu ":"
+            const noiDungToSave = content1.trim()
+            console.log('Lưu nội dung giao dịch (Giao lịch):', noiDungToSave)
+            transactions.push({
+              id_nguoi_gui: nguoiGiao.id,
+              id_nguoi_nhan: nguoiNhan.id,
+              so_diem_giao_dich: soDiemFinal,
+              noi_dung_giao_dich: noiDungToSave
+            })
             
-            while (k < lines.length && k < j + 5) { // Tìm trong 5 dòng tiếp theo
-              const line3 = lines[k]?.trim()
-              if (!line3) {
-                k++
-                continue
-              }
-              
-              const match3 = line3.match(messagePattern)
-              if (!match3) {
-                k++
-                continue
-              }
-              
-              const [, time3, name3, content3] = match3
-              
-              // Kiểm tra xem name3 có match với name1 không và content3 có mention đến name2 không
-              const user3 = findUserByName(name3)
-              if (user3 && user3.id === nguoiGiao.id) {
-                const mentions3 = content3.match(new RegExp(`@${name2.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i'))
-                if (mentions3) {
-                  // Kiểm tra xem có từ xác nhận không
-                  const words = content3.split(/\s+/).filter(w => w && !w.startsWith('@'))
-                  const hasConfirm = words.some(w => confirmPattern.test(w.trim()))
-                  
-                  if (hasConfirm) {
-                    foundConfirm = true
-                    // Tạo giao dịch với số điểm đã được xử lý (có thể là deal lại)
-                    transactions.push({
-                      id_nguoi_gui: nguoiGiao.id,
-                      id_nguoi_nhan: nguoiNhan.id,
-                      so_diem_giao_dich: soDiemFinal,
-                      noi_dung_giao_dich: noiDung
-                    })
-                    
-                    // Nhảy đến sau tin nhắn 3
-                    i = k + 1
-                    break
-                  }
-                }
-              }
-              
-              k++
-            }
-            
-            if (foundConfirm) {
-              break
-            }
+            // Nhảy đến sau tin nhắn 2
+            i = j + 1
+            break
           }
         }
         
         j++
       }
       
-      // Nếu không tìm thấy đủ 3 tin nhắn, tiếp tục với dòng tiếp theo
+      // Nếu không tìm thấy tin nhắn 2, tiếp tục với dòng tiếp theo
       if (!nguoiNhan) {
         i++
       }
@@ -1005,20 +1197,15 @@ const QuanLyGiaoDich = () => {
               foundConfirm = true
               
               // Tạo giao dịch
-              // Lấy nội dung (bỏ "san" và mention, giữ lại phần còn lại)
-              let noiDung = content1
-              // Bỏ "san" và các từ liên quan
-              noiDung = noiDung.replace(/\b(san|kt|nhe|tks)\b/gi, '').trim()
-              // Bỏ mention
-              noiDung = noiDung.replace(/@[^@\s]+/g, '').trim()
-              // Bỏ số điểm ở cuối
-              noiDung = noiDung.replace(/(-?\d+[.,]?\d*)\s*[đd]?$/i, '').trim()
-              
+              // Chỉ lưu nội dung tin nhắn đầu tiên (không có timestamp và tên người gửi)
+              // content1 đã được extract từ regex, chỉ chứa nội dung sau dấu ":"
+              const noiDungToSave = content1.trim()
+              console.log('Lưu nội dung giao dịch (San điểm - 2 tin nhắn):', noiDungToSave)
               transactions.push({
                 id_nguoi_gui: nguoiGui.id,
                 id_nguoi_nhan: nguoiNhan.id,
                 so_diem_giao_dich: soDiem,
-                noi_dung_giao_dich: noiDung || null
+                noi_dung_giao_dich: noiDungToSave
               })
               
               // Nhảy đến sau tin nhắn 2
@@ -1032,17 +1219,15 @@ const QuanLyGiaoDich = () => {
         
         // Nếu không tìm thấy tin nhắn 2, vẫn tạo giao dịch (có thể không có xác nhận)
         if (!foundConfirm) {
-          // Lấy nội dung (bỏ "san" và mention, giữ lại phần còn lại)
-          let noiDung = content1
-          noiDung = noiDung.replace(/\b(san|kt|nhe|tks)\b/gi, '').trim()
-          noiDung = noiDung.replace(/@[^@\s]+/g, '').trim()
-          noiDung = noiDung.replace(/(-?\d+[.,]?\d*)\s*[đd]?$/i, '').trim()
-          
+          // Chỉ lưu nội dung tin nhắn đầu tiên (không có timestamp và tên người gửi)
+          // content1 đã được extract từ regex, chỉ chứa nội dung sau dấu ":"
+          const noiDungToSave = content1.trim()
+          console.log('Lưu nội dung giao dịch (San điểm - 1 tin nhắn có timestamp):', noiDungToSave)
           transactions.push({
             id_nguoi_gui: nguoiGui.id,
             id_nguoi_nhan: nguoiNhan.id,
             so_diem_giao_dich: soDiem,
-            noi_dung_giao_dich: noiDung || null
+            noi_dung_giao_dich: noiDungToSave
           })
           i++
         }
@@ -1132,17 +1317,12 @@ const QuanLyGiaoDich = () => {
         }
         
         // Tạo giao dịch
-        // Lấy nội dung (bỏ "san" và các từ liên quan, mention, số điểm)
-        let noiDung = line
-        noiDung = noiDung.replace(/\b(san|cho|kt|nhe|tks)\b/gi, '').trim()
-        noiDung = noiDung.replace(/@[^@\s]+/g, '').trim()
-        noiDung = noiDung.replace(/(-?\d+[.,]?\d*)\s*[đd]?$/i, '').trim()
-        
+        // Lưu đủ tin nhắn gốc vào nội dung giao dịch
         transactions.push({
           id_nguoi_gui: defaultSenderUser.id,
           id_nguoi_nhan: nguoiNhan.id,
           so_diem_giao_dich: soDiem,
-          noi_dung_giao_dich: noiDung || null
+          noi_dung_giao_dich: line
         })
         
         i++
@@ -1156,12 +1336,18 @@ const QuanLyGiaoDich = () => {
   // Mở modal sửa giao dịch
   const handleEditTransaction = (transaction) => {
     setEditingTransaction(transaction)
+    const nguoiGui = users.find(u => u.id === transaction.id_nguoi_gui)
+    const nguoiNhan = users.find(u => u.id === transaction.id_nguoi_nhan)
     setEditForm({
       id_nguoi_gui: transaction.id_nguoi_gui.toString(),
       id_nguoi_nhan: transaction.id_nguoi_nhan.toString(),
       id_loai_giao_dich: transaction.id_loai_giao_dich.toString(),
       so_diem_giao_dich: transaction.so_diem_giao_dich.toString(),
       noi_dung_giao_dich: transaction.noi_dung_giao_dich || ''
+    })
+    setEditFormText({
+      nguoi_gui_text: nguoiGui?.ten_zalo || '',
+      nguoi_nhan_text: nguoiNhan?.ten_zalo || ''
     })
     setShowEditModal(true)
     setError('')
@@ -1177,6 +1363,10 @@ const QuanLyGiaoDich = () => {
       id_loai_giao_dich: '',
       so_diem_giao_dich: '',
       noi_dung_giao_dich: ''
+    })
+    setEditFormText({
+      nguoi_gui_text: '',
+      nguoi_nhan_text: ''
     })
     setError('')
   }
@@ -1220,6 +1410,72 @@ const QuanLyGiaoDich = () => {
     }
   }
 
+  // Chốt giao dịch (chuyển từ chưa chốt sang đã chốt)
+  const handleChotTransaction = async (transaction) => {
+    if (!window.confirm(`Bạn có chắc chắn muốn chốt giao dịch #${transaction.id}?\n\nSau khi chốt, điểm sẽ được cộng/trừ và không thể sửa/xóa giao dịch này.`)) {
+      return
+    }
+
+    try {
+      setSubmitting(true)
+      setError('')
+      
+      const response = await transactionAPI.chotGiaoDich(transaction.id)
+      if (response.success) {
+        await loadTransactions(pagination.page)
+        await loadAllTransactionsForCancelCheck()
+        await loadAllTransactionsForFilter()
+        alert('Chốt giao dịch thành công! Điểm đã được cập nhật.')
+      }
+    } catch (err) {
+      setError(err.message || 'Không thể chốt giao dịch')
+      console.error('Chot transaction error:', err)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // Chốt tất cả giao dịch "Giao lịch" chưa chốt
+  const handleChotTatCaGiaoDich = async () => {
+    // Đếm số giao dịch chưa chốt
+    const chuaChotCount = allTransactionsForFilter.filter(
+      tx => tx.ten_loai_giao_dich === 'Giao lịch' && tx.trang_thai === 'chua_chot'
+    ).length
+
+    if (chuaChotCount === 0) {
+      alert('Không có giao dịch "Giao lịch" nào chưa chốt!')
+      return
+    }
+
+    if (!window.confirm(`Bạn có chắc chắn muốn chốt TẤT CẢ ${chuaChotCount} giao dịch "Giao lịch" chưa chốt?\n\nSau khi chốt, điểm sẽ được cộng/trừ cho tất cả các giao dịch này.`)) {
+      return
+    }
+
+    try {
+      setSubmitting(true)
+      setError('')
+      
+      const response = await transactionAPI.chotTatCaGiaoDich()
+      if (response.success) {
+        await loadTransactions(pagination.page)
+        await loadAllTransactionsForCancelCheck()
+        await loadAllTransactionsForFilter()
+        
+        const message = response.data.errors && response.data.errors.length > 0
+          ? `Đã chốt thành công ${response.data.count}/${response.data.total} giao dịch.\n\nCó ${response.data.errors.length} giao dịch bị lỗi:\n${response.data.errors.slice(0, 5).join('\n')}${response.data.errors.length > 5 ? '\n...' : ''}`
+          : `Đã chốt thành công ${response.data.count} giao dịch!`
+        
+        alert(message)
+      }
+    } catch (err) {
+      setError(err.message || 'Không thể chốt tất cả giao dịch')
+      console.error('Chot tat ca giao dich error:', err)
+      alert('Lỗi khi chốt tất cả giao dịch: ' + (err.message || 'Vui lòng thử lại'))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   // Hủy lịch (tạo giao dịch "Hủy lịch")
   const handleCancelTransaction = async (transaction) => {
     if (!window.confirm(`Bạn có chắc chắn muốn hủy giao dịch #${transaction.id}?`)) {
@@ -1257,8 +1513,34 @@ const QuanLyGiaoDich = () => {
     }
   }
 
+  // Xóa giao dịch
+  const handleDeleteTransaction = async (transaction) => {
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa giao dịch #${transaction.id}? Điểm sẽ được hoàn lại cho cả 2 người.`)) {
+      return
+    }
+
+    try {
+      setSubmitting(true)
+      setError('')
+      
+      const response = await transactionAPI.delete(transaction.id)
+      if (response.success) {
+        await loadTransactions(pagination.page) // Reload trang hiện tại
+        await loadAllTransactionsForCancelCheck() // Reload tất cả để cập nhật trạng thái "Đã hủy"
+        await loadAllTransactionsForFilter() // Reload tất cả để cập nhật filter
+        alert('Xóa giao dịch thành công và đã hoàn lại điểm!')
+      }
+    } catch (err) {
+      setError(err.message || 'Không thể xóa giao dịch')
+      console.error('Delete transaction error:', err)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   // Kiểm tra xem có filter nào đang active không
   const hasActiveFilters = filterLoaiGiaoDich !== 'all' || 
+    filterTrangThai !== 'all' ||
     filterDateFrom || 
     filterDateTo || 
     searchTerm
@@ -1268,6 +1550,13 @@ const QuanLyGiaoDich = () => {
     // Filter theo loại giao dịch
     if (filterLoaiGiaoDich !== 'all') {
       if (tx.id_loai_giao_dich !== parseInt(filterLoaiGiaoDich)) {
+        return false
+      }
+    }
+    
+    // Filter theo trạng thái
+    if (filterTrangThai !== 'all') {
+      if (tx.trang_thai !== filterTrangThai) {
         return false
       }
     }
@@ -1337,11 +1626,12 @@ const QuanLyGiaoDich = () => {
     if (hasActiveFilters) {
       setPagination(prev => ({ ...prev, page: 1 }))
     }
-  }, [filterLoaiGiaoDich, filterDateFrom, filterDateTo, searchTerm])
+  }, [filterLoaiGiaoDich, filterTrangThai, filterDateFrom, filterDateTo, searchTerm])
 
   // Hàm reset tất cả filters
   const handleResetFilters = () => {
     setFilterLoaiGiaoDich('all')
+    setFilterTrangThai('all')
     setFilterDateFrom('')
     setFilterDateTo('')
     setSearchTerm('')
@@ -1368,10 +1658,10 @@ const QuanLyGiaoDich = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl sm:text-2xl md:text-3xl font-raleway-bold text-gray-800 mb-1 sm:mb-2">
+        <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-800 mb-1 sm:mb-2">
           Quản lý giao dịch
         </h1>
-        <p className="text-sm sm:text-base text-gray-600 font-raleway-regular">
+        <p className="text-sm sm:text-base text-gray-600 font-sans">
           Theo dõi và quản lý tất cả các giao dịch trong hệ thống
         </p>
       </div>
@@ -1382,7 +1672,7 @@ const QuanLyGiaoDich = () => {
           <div className="flex space-x-1">
             <button
               onClick={() => setMainTab('create')}
-              className={`px-6 py-3 font-raleway-semibold text-sm rounded-t-lg transition-all ${
+              className={`px-6 py-3 font-semibold text-sm rounded-t-lg transition-all ${
                 mainTab === 'create'
                   ? 'bg-primary text-white'
                   : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
@@ -1392,7 +1682,7 @@ const QuanLyGiaoDich = () => {
             </button>
             <button
               onClick={() => setMainTab('list')}
-              className={`px-6 py-3 font-raleway-semibold text-sm rounded-t-lg transition-all ${
+              className={`px-6 py-3 font-semibold text-sm rounded-t-lg transition-all ${
                 mainTab === 'list'
                   ? 'bg-primary text-white'
                   : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
@@ -1409,7 +1699,7 @@ const QuanLyGiaoDich = () => {
             <form onSubmit={handleSubmitAll} className="space-y-6">
               {/* Error Message */}
               {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm font-raleway-medium">
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm font-medium">
                   {error}
                 </div>
               )}
@@ -1419,14 +1709,14 @@ const QuanLyGiaoDich = () => {
                 {transactionRows.map((row, index) => (
                   <div key={row.id} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-sm font-raleway-semibold text-gray-700">
+                      <h3 className="text-sm font-semibold text-gray-700">
                         Giao dịch #{index + 1}
                       </h3>
                       {transactionRows.length > 1 && (
                         <button
                           type="button"
                           onClick={() => handleRemoveRow(row.id)}
-                          className="text-red-500 hover:text-red-700 text-sm font-raleway-semibold"
+                          className="text-red-500 hover:text-red-700 text-sm font-semibold"
                         >
                           Xóa
                         </button>
@@ -1436,8 +1726,8 @@ const QuanLyGiaoDich = () => {
                     {/* Hàng đầu tiên: Các ô input */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                       {/* Người gửi */}
-                      <div>
-                        <label className="block text-xs font-raleway-semibold text-gray-700 mb-1">
+                      <div className="relative">
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">
                           Người gửi <span className="text-red-500">*</span>
                         </label>
                         {loadingUsers ? (
@@ -1445,25 +1735,57 @@ const QuanLyGiaoDich = () => {
                             Đang tải...
                           </div>
                         ) : (
-                          <select
-                            value={row.id_nguoi_gui}
-                            onChange={(e) => handleRowChange(row.id, 'id_nguoi_gui', e.target.value)}
-                            required
-                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                          <div 
+                            ref={(el) => {
+                              if (el) autocompleteRefs.current[`${row.id}_id_nguoi_gui`] = el
+                            }}
+                            className="relative"
                           >
-                            <option value="">-- Chọn --</option>
-                            {users.map((user) => (
-                              <option key={user.id} value={user.id}>
-                                {user.ten_zalo}
-                              </option>
-                            ))}
-                          </select>
+                            <input
+                              type="text"
+                              value={row.nguoi_gui_text}
+                              onChange={(e) => handleAutocompleteInputChange(row.id, 'id_nguoi_gui', e.target.value)}
+                              onFocus={(e) => {
+                                if (e.target.value.trim()) {
+                                  setAutocompleteState({ rowId: row.id, field: 'id_nguoi_gui', isOpen: true })
+                                }
+                              }}
+                              required={!row.id_nguoi_gui}
+                              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-sans"
+                              placeholder="Nhập tên người gửi..."
+                              autoComplete="off"
+                            />
+                            <input type="hidden" value={row.id_nguoi_gui} required />
+                            
+                            {/* Dropdown suggestions */}
+                            {autocompleteState.isOpen && 
+                             autocompleteState.rowId === row.id && 
+                             autocompleteState.field === 'id_nguoi_gui' && (
+                              <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                                {filterUsers(row.nguoi_gui_text).length > 0 ? (
+                                  filterUsers(row.nguoi_gui_text).map((user) => (
+                                    <div
+                                      key={user.id}
+                                      onClick={() => handleSelectUser(row.id, 'id_nguoi_gui', user)}
+                                      className="px-3 py-2 text-sm hover:bg-primary hover:text-white cursor-pointer font-sans transition-colors"
+                                    >
+                                      {user.ten_zalo}
+                                    </div>
+                                  ))
+                                ) : (
+                                  <div className="px-3 py-2 text-sm text-gray-500 font-sans">
+                                    Không tìm thấy người dùng
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
 
                       {/* Người nhận */}
-                      <div>
-                        <label className="block text-xs font-raleway-semibold text-gray-700 mb-1">
+                      <div className="relative">
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">
                           Người nhận <span className="text-red-500">*</span>
                         </label>
                         {loadingUsers ? (
@@ -1471,32 +1793,64 @@ const QuanLyGiaoDich = () => {
                             Đang tải...
                           </div>
                         ) : (
-                          <select
-                            value={row.id_nguoi_nhan}
-                            onChange={(e) => handleRowChange(row.id, 'id_nguoi_nhan', e.target.value)}
-                            required
-                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                          <div 
+                            ref={(el) => {
+                              if (el) autocompleteRefs.current[`${row.id}_id_nguoi_nhan`] = el
+                            }}
+                            className="relative"
                           >
-                            <option value="">-- Chọn --</option>
-                            {users.map((user) => (
-                              <option key={user.id} value={user.id}>
-                                {user.ten_zalo}
-                              </option>
-                            ))}
-                          </select>
+                            <input
+                              type="text"
+                              value={row.nguoi_nhan_text}
+                              onChange={(e) => handleAutocompleteInputChange(row.id, 'id_nguoi_nhan', e.target.value)}
+                              onFocus={(e) => {
+                                if (e.target.value.trim()) {
+                                  setAutocompleteState({ rowId: row.id, field: 'id_nguoi_nhan', isOpen: true })
+                                }
+                              }}
+                              required={!row.id_nguoi_nhan}
+                              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-sans"
+                              placeholder="Nhập tên người nhận..."
+                              autoComplete="off"
+                            />
+                            <input type="hidden" value={row.id_nguoi_nhan} required />
+                            
+                            {/* Dropdown suggestions */}
+                            {autocompleteState.isOpen && 
+                             autocompleteState.rowId === row.id && 
+                             autocompleteState.field === 'id_nguoi_nhan' && (
+                              <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                                {filterUsers(row.nguoi_nhan_text).length > 0 ? (
+                                  filterUsers(row.nguoi_nhan_text).map((user) => (
+                                    <div
+                                      key={user.id}
+                                      onClick={() => handleSelectUser(row.id, 'id_nguoi_nhan', user)}
+                                      className="px-3 py-2 text-sm hover:bg-primary hover:text-white cursor-pointer font-sans transition-colors"
+                                    >
+                                      {user.ten_zalo}
+                                    </div>
+                                  ))
+                                ) : (
+                                  <div className="px-3 py-2 text-sm text-gray-500 font-sans">
+                                    Không tìm thấy người dùng
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
 
                       {/* Loại giao dịch */}
                       <div>
-                        <label className="block text-xs font-raleway-semibold text-gray-700 mb-1">
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">
                           Loại giao dịch <span className="text-red-500">*</span>
                         </label>
                         <select
                           value={row.id_loai_giao_dich}
                           onChange={(e) => handleRowChange(row.id, 'id_loai_giao_dich', e.target.value)}
                           required
-                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-sans"
                         >
                           <option value="">-- Chọn --</option>
                           <option value="1">San điểm</option>
@@ -1506,7 +1860,7 @@ const QuanLyGiaoDich = () => {
 
                       {/* Số điểm */}
                       <div>
-                        <label className="block text-xs font-raleway-semibold text-gray-700 mb-1">
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">
                           Số điểm <span className="text-red-500">*</span>
                         </label>
                         <input
@@ -1515,21 +1869,21 @@ const QuanLyGiaoDich = () => {
                           value={row.so_diem_giao_dich}
                           onChange={(e) => handleRowChange(row.id, 'so_diem_giao_dich', e.target.value)}
                           required
-                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-sans"
                           placeholder="0.00"
                         />
                       </div>
 
                       {/* Nội dung giao dịch */}
                       <div>
-                        <label className="block text-xs font-raleway-semibold text-gray-700 mb-1">
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">
                           Nội dung
                         </label>
                         <input
                           type="text"
                           value={row.noi_dung_giao_dich}
                           onChange={(e) => handleRowChange(row.id, 'noi_dung_giao_dich', e.target.value)}
-                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-sans"
                           placeholder="Nội dung giao dịch"
                         />
                       </div>
@@ -1543,7 +1897,7 @@ const QuanLyGiaoDich = () => {
                 <button
                   type="button"
                   onClick={handleAddRow}
-                  className="px-4 py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-primary hover:text-primary font-raleway-semibold text-sm transition-colors"
+                  className="px-4 py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-primary hover:text-primary font-semibold text-sm transition-colors"
                 >
                   + Thêm giao dịch mới
                 </button>
@@ -1553,7 +1907,7 @@ const QuanLyGiaoDich = () => {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {/* Textarea Giao lịch */}
                 <div>
-                  <label className="block text-sm font-raleway-semibold text-gray-700 mb-2">
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
                     Nhập tin nhắn Giao lịch
                   </label>
                   <textarea
@@ -1562,14 +1916,14 @@ const QuanLyGiaoDich = () => {
                     onPaste={handleGiaoLichPaste}
                     onBlur={handleGiaoLichBlur}
                     rows={8}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular resize-none font-mono text-sm"
-                    placeholder="Dán đoạn tin nhắn chat vào đây. Hệ thống sẽ tự động phát hiện và tạo giao dịch từ 3 tin nhắn liên tiếp."
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-sans resize-none font-mono text-sm"
+                    placeholder="Dán đoạn tin nhắn chat vào đây. Hệ thống sẽ tự động phát hiện và tạo giao dịch từ 2 tin nhắn liên tiếp."
                   />
                 </div>
 
                 {/* Textarea San điểm */}
                 <div>
-                  <label className="block text-sm font-raleway-semibold text-gray-700 mb-2">
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
                     Nhập tin nhắn San điểm
                   </label>
                   <textarea
@@ -1578,7 +1932,7 @@ const QuanLyGiaoDich = () => {
                     onPaste={handleSanDiemPaste}
                     onBlur={handleSanDiemBlur}
                     rows={8}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular resize-none font-mono text-sm"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-sans resize-none font-mono text-sm"
                     placeholder="Dán đoạn tin nhắn chat vào đây. Hệ thống sẽ tự động phát hiện và tạo giao dịch từ 1-2 tin nhắn."
                   />
                 </div>
@@ -1589,7 +1943,7 @@ const QuanLyGiaoDich = () => {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-6 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg font-raleway-semibold transition-colors shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                  className="px-6 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg font-semibold transition-colors shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
                 >
                   {submitting ? (
                     <>
@@ -1610,7 +1964,7 @@ const QuanLyGiaoDich = () => {
             <div className="space-y-6">
               {/* Error Message */}
               {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-3 sm:px-4 py-2 sm:py-3 rounded-lg text-sm sm:text-base font-raleway-medium">
+                <div className="bg-red-50 border border-red-200 text-red-700 px-3 sm:px-4 py-2 sm:py-3 rounded-lg text-sm sm:text-base font-medium">
                   {error}
                 </div>
               )}
@@ -1618,6 +1972,20 @@ const QuanLyGiaoDich = () => {
               {/* Filters */}
               <div className="bg-white rounded-lg shadow-md p-3 sm:p-4">
                 <div className="space-y-3 sm:space-y-4">
+                  {/* Nút Chốt tất cả */}
+                  <div className="flex justify-end">
+                    <button
+                      onClick={handleChotTatCaGiaoDich}
+                      disabled={submitting}
+                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-md hover:shadow-lg"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Chốt tất cả giao dịch chưa chốt
+                    </button>
+                  </div>
+                  
                   {/* Search */}
                   <div>
                     <input
@@ -1625,21 +1993,21 @@ const QuanLyGiaoDich = () => {
                       placeholder="Tìm kiếm theo nội dung, tên người gửi/nhận, loại giao dịch, ID..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                      className="w-full px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-sans"
                     />
                   </div>
                   
-                  {/* Filter Row - Loại giao dịch, Từ ngày, Đến ngày, Reset */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {/* Filter Row - Loại giao dịch, Trạng thái, Từ ngày, Đến ngày, Reset */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                     {/* Filter Loại Giao Dịch */}
                     <div>
-                      <label className="block text-xs sm:text-sm font-raleway-semibold text-gray-700 mb-1">
+                      <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-1">
                         Loại giao dịch
                       </label>
                       <select
                         value={filterLoaiGiaoDich}
                         onChange={(e) => setFilterLoaiGiaoDich(e.target.value)}
-                        className="w-full px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                        className="w-full px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-sans"
                       >
                         <option value="all">Tất cả</option>
                         <option value="1">San điểm</option>
@@ -1648,29 +2016,45 @@ const QuanLyGiaoDich = () => {
                       </select>
                     </div>
                     
+                    {/* Filter Trạng Thái */}
+                    <div>
+                      <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-1">
+                        Trạng thái
+                      </label>
+                      <select
+                        value={filterTrangThai}
+                        onChange={(e) => setFilterTrangThai(e.target.value)}
+                        className="w-full px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-sans"
+                      >
+                        <option value="all">Tất cả</option>
+                        <option value="chua_chot">Chưa chốt</option>
+                        <option value="da_chot">Đã chốt</option>
+                      </select>
+                    </div>
+                    
                     {/* Filter Từ Ngày */}
                     <div>
-                      <label className="block text-xs sm:text-sm font-raleway-semibold text-gray-700 mb-1">
+                      <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-1">
                         Từ ngày
                       </label>
                       <input
                         type="date"
                         value={filterDateFrom}
                         onChange={(e) => setFilterDateFrom(e.target.value)}
-                        className="w-full px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                        className="w-full px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-sans"
                       />
                     </div>
                     
                     {/* Filter Đến Ngày */}
                     <div>
-                      <label className="block text-xs sm:text-sm font-raleway-semibold text-gray-700 mb-1">
+                      <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-1">
                         Đến ngày
                       </label>
                       <input
                         type="date"
                         value={filterDateTo}
                         onChange={(e) => setFilterDateTo(e.target.value)}
-                        className="w-full px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                        className="w-full px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-sans"
                       />
                     </div>
                     
@@ -1679,7 +2063,7 @@ const QuanLyGiaoDich = () => {
                       {hasActiveFilters && (
                         <button
                           onClick={handleResetFilters}
-                          className="w-full px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg text-gray-700 font-raleway-semibold hover:bg-gray-50 transition-colors"
+                          className="w-full px-3 sm:px-4 py-2 text-sm sm:text-base border border-gray-300 rounded-lg text-gray-700 font-semibold hover:bg-gray-50 transition-colors"
                         >
                           Xóa bộ lọc
                         </button>
@@ -1694,17 +2078,17 @@ const QuanLyGiaoDich = () => {
         {loading || loadingAllTransactions ? (
           <div className="p-8 text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-            <p className="mt-4 text-gray-600 font-raleway-medium">Đang tải...</p>
+            <p className="mt-4 text-gray-600 font-medium">Đang tải...</p>
           </div>
         ) : displayTransactions.length === 0 ? (
           <div className="p-8 text-center">
-            <p className="text-gray-600 font-raleway-medium">
+            <p className="text-gray-600 font-medium">
               {hasActiveFilters ? 'Không có giao dịch nào phù hợp với bộ lọc' : 'Không có giao dịch nào'}
             </p>
             {hasActiveFilters && (
               <button
                 onClick={handleResetFilters}
-                className="mt-4 px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 font-raleway-semibold hover:bg-gray-50 transition-colors"
+                className="mt-4 px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 font-semibold hover:bg-gray-50 transition-colors"
               >
                 Xóa bộ lọc
               </button>
@@ -1720,19 +2104,28 @@ const QuanLyGiaoDich = () => {
                   tx => tx.ten_loai_giao_dich === 'Hủy lịch' && tx.id_giao_dich_doi_chung === transaction.id
                 )
                 const canCancel = isGiaoLich && !isCancelled
+                const isChuaChot = transaction.trang_thai === 'chua_chot'
+                const canEdit = isChuaChot && transaction.ten_loai_giao_dich !== 'Hủy lịch'
                 
                 return (
-                  <div key={transaction.id} className="p-4 hover:bg-gray-50 transition-colors">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-raleway-semibold text-gray-900">#{transaction.id}</span>
+                  <div key={transaction.id} className="p-5 hover:bg-gray-50 transition-colors">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-lg font-bold text-gray-900">#{transaction.id}</span>
                         {isCancelled && (
-                          <span className="px-2 py-1 text-xs font-raleway-semibold rounded-full bg-red-100 text-red-800">
+                          <span className="px-3 py-1.5 text-sm font-bold rounded-full bg-red-100 text-red-800">
                             Đã hủy
                           </span>
                         )}
+                        <span className={`px-3 py-1.5 text-sm font-bold rounded-full ${
+                          isChuaChot 
+                            ? 'bg-yellow-100 text-yellow-800' 
+                            : 'bg-green-100 text-green-800'
+                        }`}>
+                          {isChuaChot ? 'Chưa chốt' : 'Đã chốt'}
+                        </span>
                       </div>
-                      <span className={`px-2 py-1 text-xs font-raleway-semibold rounded-full ${
+                      <span className={`px-3 py-1.5 text-sm font-bold rounded-full ${
                         transaction.ten_loai_giao_dich === 'Giao lịch' 
                           ? 'bg-blue-100 text-blue-800'
                           : transaction.ten_loai_giao_dich === 'San điểm'
@@ -1745,58 +2138,81 @@ const QuanLyGiaoDich = () => {
                       </span>
                     </div>
                     
-                    <div className="space-y-2 mb-3">
+                    <div className="space-y-3 mb-4">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-raleway-medium text-gray-500">Người gửi:</span>
-                        <span className="text-sm font-raleway-regular text-gray-700">
+                        <span className="text-sm font-semibold text-gray-600">Người gửi:</span>
+                        <span className="text-base font-sans font-medium text-gray-800">
                           {getUserName(transaction.id_nguoi_gui)}
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-raleway-medium text-gray-500">Người nhận:</span>
-                        <span className="text-sm font-raleway-regular text-gray-700">
+                        <span className="text-sm font-semibold text-gray-600">Người nhận:</span>
+                        <span className="text-base font-sans font-medium text-gray-800">
                           {getUserName(transaction.id_nguoi_nhan)}
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-raleway-medium text-gray-500">Số điểm:</span>
-                        <span className={`text-sm font-raleway-semibold ${
+                        <span className="text-sm font-semibold text-gray-600">Số điểm:</span>
+                        <span className={`text-xl font-bold ${
                           parseFloat(transaction.so_diem_giao_dich) < 0 ? 'text-red-600' : 'text-gray-900'
                         }`}>
                           {parseFloat(transaction.so_diem_giao_dich).toFixed(2)}
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-raleway-medium text-gray-500">Ngày giờ:</span>
-                        <span className="text-xs font-raleway-regular text-gray-500">
+                        <span className="text-sm font-semibold text-gray-600">Ngày giờ:</span>
+                        <span className="text-base font-sans text-gray-600">
                           {formatDate(transaction.created_at)}
                         </span>
                       </div>
                       {transaction.noi_dung_giao_dich && (
                         <div className="flex items-start justify-between">
-                          <span className="text-xs font-raleway-medium text-gray-500">Nội dung:</span>
-                          <span className="text-xs font-raleway-regular text-gray-700 text-right flex-1 ml-2">
+                          <span className="text-sm font-semibold text-gray-600">Nội dung:</span>
+                          <span className="text-base font-sans text-gray-800 text-right flex-1 ml-2">
                             {transaction.noi_dung_giao_dich}
                           </span>
                         </div>
                       )}
                     </div>
                     
-                    <div className="pt-2 border-t border-gray-200 flex gap-2">
-                      {transaction.ten_loai_giao_dich !== 'Hủy lịch' && (
+                    <div className="pt-3 border-t border-gray-200 flex gap-2 flex-wrap">
+                      {/* Nút Chốt - chỉ hiển thị khi chưa chốt và là Giao lịch */}
+                      {isChuaChot && isGiaoLich && (
                         <button
-                          onClick={() => handleEditTransaction(transaction)}
+                          onClick={() => handleChotTransaction(transaction)}
                           disabled={submitting}
-                          className="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm font-raleway-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="flex-1 px-4 py-3 bg-purple-500 hover:bg-purple-600 text-white text-base font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          Sửa
+                          Chốt
                         </button>
                       )}
-                      {canCancel && (
+                      
+                      {/* Nút Sửa/Xóa - luôn hiển thị (trừ Hủy lịch) */}
+                      {transaction.ten_loai_giao_dich !== 'Hủy lịch' && (
+                        <>
+                          <button
+                            onClick={() => handleEditTransaction(transaction)}
+                            disabled={submitting}
+                            className="flex-1 px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white text-base font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Sửa
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTransaction(transaction)}
+                            disabled={submitting}
+                            className="flex-1 px-4 py-3 bg-red-500 hover:bg-red-600 text-white text-base font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Xóa
+                          </button>
+                        </>
+                      )}
+                      
+                      {/* Nút Hủy lịch - chỉ hiển thị khi chưa chốt */}
+                      {canCancel && isChuaChot && (
                         <button
                           onClick={() => handleCancelTransaction(transaction)}
                           disabled={submitting}
-                          className="flex-1 px-3 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-raleway-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="flex-1 px-4 py-3 bg-orange-500 hover:bg-orange-600 text-white text-base font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           Hủy lịch
                         </button>
@@ -1812,28 +2228,31 @@ const QuanLyGiaoDich = () => {
               <table className="w-full">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-raleway-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">
                       Mã giao dịch
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-raleway-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">
                       Người gửi
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-raleway-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">
                       Người nhận
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-raleway-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">
                       Loại giao dịch
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-raleway-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">
+                      Trạng thái
+                    </th>
+                    <th className="px-6 py-4 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">
                       Số điểm
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-raleway-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">
                       Nội dung
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-raleway-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">
                       Ngày giờ
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-raleway-semibold text-gray-600 uppercase tracking-wider">
+                    <th className="px-6 py-4 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">
                       Hành động
                     </th>
                   </tr>
@@ -1845,31 +2264,33 @@ const QuanLyGiaoDich = () => {
                       tx => tx.ten_loai_giao_dich === 'Hủy lịch' && tx.id_giao_dich_doi_chung === transaction.id
                     )
                     const canCancel = isGiaoLich && !isCancelled
+                    const isChuaChot = transaction.trang_thai === 'chua_chot'
+                    const canEdit = isChuaChot && transaction.ten_loai_giao_dich !== 'Hủy lịch'
                     
                     return (
                       <tr key={transaction.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-6 py-5 whitespace-nowrap">
                           <div className="flex items-center gap-2">
-                            <span className="text-base font-raleway-semibold text-gray-900">#{transaction.id}</span>
+                            <span className="text-lg font-bold text-gray-900">#{transaction.id}</span>
                             {isCancelled && (
-                              <span className="px-2 py-1 text-xs font-raleway-semibold rounded-full bg-red-100 text-red-800">
+                              <span className="px-3 py-1.5 text-sm font-bold rounded-full bg-red-100 text-red-800">
                                 Đã hủy
                               </span>
                             )}
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="text-base font-raleway-regular text-gray-700">
+                        <td className="px-6 py-5 whitespace-nowrap">
+                          <span className="text-lg font-sans font-medium text-gray-800">
                             {getUserName(transaction.id_nguoi_gui)}
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="text-base font-raleway-regular text-gray-700">
+                        <td className="px-6 py-5 whitespace-nowrap">
+                          <span className="text-lg font-sans font-medium text-gray-800">
                             {getUserName(transaction.id_nguoi_nhan)}
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2 py-1 text-xs font-raleway-semibold rounded-full ${
+                        <td className="px-6 py-5 whitespace-nowrap">
+                          <span className={`px-3 py-1.5 text-sm font-bold rounded-full ${
                             transaction.ten_loai_giao_dich === 'Giao lịch' 
                               ? 'bg-blue-100 text-blue-800'
                               : transaction.ten_loai_giao_dich === 'San điểm'
@@ -1881,41 +2302,75 @@ const QuanLyGiaoDich = () => {
                             {transaction.ten_loai_giao_dich}
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`text-base font-raleway-semibold ${
+                        <td className="px-6 py-5 whitespace-nowrap">
+                          <span className={`px-3 py-1.5 text-sm font-bold rounded-full ${
+                            isChuaChot 
+                              ? 'bg-yellow-100 text-yellow-800' 
+                              : 'bg-green-100 text-green-800'
+                          }`}>
+                            {isChuaChot ? 'Chưa chốt' : 'Đã chốt'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-5 whitespace-nowrap">
+                          <span className={`text-xl font-bold ${
                             parseFloat(transaction.so_diem_giao_dich) < 0 ? 'text-red-600' : 'text-gray-900'
                           }`}>
                             {parseFloat(transaction.so_diem_giao_dich).toFixed(2)}
                           </span>
                         </td>
-                        <td className="px-6 py-4 text-sm font-raleway-regular text-gray-700 max-w-xs">
+                        <td className="px-6 py-5 text-base font-sans text-gray-700 max-w-xs">
                           {transaction.noi_dung_giao_dich || '-'}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-raleway-regular text-gray-500">
+                        <td className="px-6 py-5 whitespace-nowrap text-base font-sans text-gray-600">
                           {formatDate(transaction.created_at)}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center gap-2">
-                            {transaction.ten_loai_giao_dich !== 'Hủy lịch' && (
+                        <td className="px-6 py-5 whitespace-nowrap">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {/* Nút Chốt - chỉ hiển thị khi chưa chốt và là Giao lịch */}
+                            {isChuaChot && isGiaoLich && (
                               <button
-                                onClick={() => handleEditTransaction(transaction)}
+                                onClick={() => handleChotTransaction(transaction)}
                                 disabled={submitting}
-                                className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-sm font-raleway-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white text-base font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                               >
-                                Sửa
+                                Chốt
                               </button>
                             )}
-                            {canCancel && (
+                            
+                            {/* Nút Sửa/Xóa - luôn hiển thị (trừ Hủy lịch) */}
+                            {transaction.ten_loai_giao_dich !== 'Hủy lịch' && (
+                              <>
+                                <button
+                                  onClick={() => handleEditTransaction(transaction)}
+                                  disabled={submitting}
+                                  className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-base font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  Sửa
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteTransaction(transaction)}
+                                  disabled={submitting}
+                                  className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-base font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  Xóa
+                                </button>
+                              </>
+                            )}
+                            
+                            {/* Nút Hủy lịch - chỉ hiển thị khi chưa chốt */}
+                            {canCancel && isChuaChot && (
                               <button
                                 onClick={() => handleCancelTransaction(transaction)}
                                 disabled={submitting}
-                                className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-sm font-raleway-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-base font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 Hủy lịch
                               </button>
                             )}
-                            {!canCancel && transaction.ten_loai_giao_dich === 'Hủy lịch' && (
-                              <span className="text-gray-400 text-sm font-raleway-regular">-</span>
+                            
+                            {/* Hiển thị dấu - cho Hủy lịch */}
+                            {transaction.ten_loai_giao_dich === 'Hủy lịch' && (
+                              <span className="text-gray-400 text-base font-sans">-</span>
                             )}
                           </div>
                         </td>
@@ -1931,7 +2386,7 @@ const QuanLyGiaoDich = () => {
         {/* Pagination */}
         {!loading && !loadingAllTransactions && displayPagination.totalPages > 1 && (
           <div className="px-3 sm:px-4 md:px-6 py-3 sm:py-4 border-t border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-0">
-            <div className="text-xs sm:text-sm font-raleway-regular text-gray-700 text-center sm:text-left">
+            <div className="text-xs sm:text-sm font-sans text-gray-700 text-center sm:text-left">
               {hasActiveFilters ? (
                 <>
                   Hiển thị {((displayPagination.page - 1) * displayPagination.limit) + 1} - {Math.min(displayPagination.page * displayPagination.limit, displayPagination.total)} trong tổng số {displayPagination.total} kết quả tìm kiếm
@@ -1946,17 +2401,17 @@ const QuanLyGiaoDich = () => {
               <button
                 onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
                 disabled={displayPagination.page === 1}
-                className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-lg text-gray-700 font-raleway-semibold hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-lg text-gray-700 font-semibold hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Trước
               </button>
-              <span className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm text-gray-700 font-raleway-medium">
+              <span className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm text-gray-700 font-medium">
                 Trang {displayPagination.page} / {displayPagination.totalPages}
               </span>
               <button
                 onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
                 disabled={displayPagination.page >= displayPagination.totalPages}
-                className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-lg text-gray-700 font-raleway-semibold hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-lg text-gray-700 font-semibold hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Sau
               </button>
@@ -1975,7 +2430,7 @@ const QuanLyGiaoDich = () => {
           <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-raleway-bold text-gray-800">
+                <h2 className="text-xl font-bold text-gray-800">
                   Sửa giao dịch #{editingTransaction.id}
                 </h2>
                 <button
@@ -1989,7 +2444,7 @@ const QuanLyGiaoDich = () => {
               </div>
 
               {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm font-raleway-medium mb-4">
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm font-medium mb-4">
                   {error}
                 </div>
               )}
@@ -1997,8 +2452,8 @@ const QuanLyGiaoDich = () => {
               <form onSubmit={handleUpdateTransaction} className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {/* Người gửi */}
-                  <div>
-                    <label className="block text-sm font-raleway-semibold text-gray-700 mb-2">
+                  <div className="relative">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
                       Người gửi <span className="text-red-500">*</span>
                     </label>
                     {loadingUsers ? (
@@ -2006,25 +2461,56 @@ const QuanLyGiaoDich = () => {
                         Đang tải...
                       </div>
                     ) : (
-                      <select
-                        value={editForm.id_nguoi_gui}
-                        onChange={(e) => handleEditFormChange('id_nguoi_gui', e.target.value)}
-                        required
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                      <div 
+                        ref={(el) => {
+                          if (el) editAutocompleteRefs.current['id_nguoi_gui'] = el
+                        }}
+                        className="relative"
                       >
-                        <option value="">-- Chọn --</option>
-                        {users.map((user) => (
-                          <option key={user.id} value={user.id}>
-                            {user.ten_zalo}
-                          </option>
-                        ))}
-                      </select>
+                        <input
+                          type="text"
+                          value={editFormText.nguoi_gui_text}
+                          onChange={(e) => handleEditAutocompleteInputChange('id_nguoi_gui', e.target.value)}
+                          onFocus={(e) => {
+                            if (e.target.value.trim()) {
+                              setEditAutocompleteState({ field: 'id_nguoi_gui', isOpen: true })
+                            }
+                          }}
+                          required={!editForm.id_nguoi_gui}
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-sans"
+                          placeholder="Nhập tên người gửi..."
+                          autoComplete="off"
+                        />
+                        <input type="hidden" value={editForm.id_nguoi_gui} required />
+                        
+                        {/* Dropdown suggestions */}
+                        {editAutocompleteState.isOpen && 
+                         editAutocompleteState.field === 'id_nguoi_gui' && (
+                          <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                            {filterUsers(editFormText.nguoi_gui_text).length > 0 ? (
+                              filterUsers(editFormText.nguoi_gui_text).map((user) => (
+                                <div
+                                  key={user.id}
+                                  onClick={() => handleEditSelectUser('id_nguoi_gui', user)}
+                                  className="px-3 py-2 text-sm hover:bg-primary hover:text-white cursor-pointer font-sans transition-colors"
+                                >
+                                  {user.ten_zalo}
+                                </div>
+                              ))
+                            ) : (
+                              <div className="px-3 py-2 text-sm text-gray-500 font-sans">
+                                Không tìm thấy người dùng
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
 
                   {/* Người nhận */}
-                  <div>
-                    <label className="block text-sm font-raleway-semibold text-gray-700 mb-2">
+                  <div className="relative">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
                       Người nhận <span className="text-red-500">*</span>
                     </label>
                     {loadingUsers ? (
@@ -2032,32 +2518,63 @@ const QuanLyGiaoDich = () => {
                         Đang tải...
                       </div>
                     ) : (
-                      <select
-                        value={editForm.id_nguoi_nhan}
-                        onChange={(e) => handleEditFormChange('id_nguoi_nhan', e.target.value)}
-                        required
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                      <div 
+                        ref={(el) => {
+                          if (el) editAutocompleteRefs.current['id_nguoi_nhan'] = el
+                        }}
+                        className="relative"
                       >
-                        <option value="">-- Chọn --</option>
-                        {users.map((user) => (
-                          <option key={user.id} value={user.id}>
-                            {user.ten_zalo}
-                          </option>
-                        ))}
-                      </select>
+                        <input
+                          type="text"
+                          value={editFormText.nguoi_nhan_text}
+                          onChange={(e) => handleEditAutocompleteInputChange('id_nguoi_nhan', e.target.value)}
+                          onFocus={(e) => {
+                            if (e.target.value.trim()) {
+                              setEditAutocompleteState({ field: 'id_nguoi_nhan', isOpen: true })
+                            }
+                          }}
+                          required={!editForm.id_nguoi_nhan}
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-sans"
+                          placeholder="Nhập tên người nhận..."
+                          autoComplete="off"
+                        />
+                        <input type="hidden" value={editForm.id_nguoi_nhan} required />
+                        
+                        {/* Dropdown suggestions */}
+                        {editAutocompleteState.isOpen && 
+                         editAutocompleteState.field === 'id_nguoi_nhan' && (
+                          <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                            {filterUsers(editFormText.nguoi_nhan_text).length > 0 ? (
+                              filterUsers(editFormText.nguoi_nhan_text).map((user) => (
+                                <div
+                                  key={user.id}
+                                  onClick={() => handleEditSelectUser('id_nguoi_nhan', user)}
+                                  className="px-3 py-2 text-sm hover:bg-primary hover:text-white cursor-pointer font-sans transition-colors"
+                                >
+                                  {user.ten_zalo}
+                                </div>
+                              ))
+                            ) : (
+                              <div className="px-3 py-2 text-sm text-gray-500 font-sans">
+                                Không tìm thấy người dùng
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
 
                   {/* Loại giao dịch */}
                   <div>
-                    <label className="block text-sm font-raleway-semibold text-gray-700 mb-2">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
                       Loại giao dịch <span className="text-red-500">*</span>
                     </label>
                     <select
                       value={editForm.id_loai_giao_dich}
                       onChange={(e) => handleEditFormChange('id_loai_giao_dich', e.target.value)}
                       required
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-sans"
                     >
                       <option value="">-- Chọn --</option>
                       <option value="1">San điểm</option>
@@ -2067,7 +2584,7 @@ const QuanLyGiaoDich = () => {
 
                   {/* Số điểm */}
                   <div>
-                    <label className="block text-sm font-raleway-semibold text-gray-700 mb-2">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
                       Số điểm <span className="text-red-500">*</span>
                     </label>
                     <input
@@ -2076,7 +2593,7 @@ const QuanLyGiaoDich = () => {
                       value={editForm.so_diem_giao_dich}
                       onChange={(e) => handleEditFormChange('so_diem_giao_dich', e.target.value)}
                       required
-                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-sans"
                       placeholder="0.00"
                     />
                   </div>
@@ -2084,14 +2601,14 @@ const QuanLyGiaoDich = () => {
 
                 {/* Nội dung giao dịch */}
                 <div>
-                  <label className="block text-sm font-raleway-semibold text-gray-700 mb-2">
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
                     Nội dung giao dịch
                   </label>
                   <textarea
                     value={editForm.noi_dung_giao_dich}
                     onChange={(e) => handleEditFormChange('noi_dung_giao_dich', e.target.value)}
                     rows={3}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-raleway-regular resize-none"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-sans resize-none"
                     placeholder="Nội dung giao dịch"
                   />
                 </div>
@@ -2102,14 +2619,14 @@ const QuanLyGiaoDich = () => {
                     type="button"
                     onClick={handleCloseEditModal}
                     disabled={submitting}
-                    className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 font-raleway-semibold hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 font-semibold hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Hủy
                   </button>
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg font-raleway-semibold transition-colors shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                    className="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-lg font-semibold transition-colors shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
                   >
                     {submitting ? (
                       <>

@@ -25,6 +25,7 @@ class TransactionModel {
         gd.so_diem_giao_dich,
         gd.id_giao_dich_doi_chung,
         gd.noi_dung_giao_dich,
+        gd.trang_thai,
         gd.created_at,
         gd.updated_at,
         lg.ten_loai_giao_dich,
@@ -53,7 +54,16 @@ class TransactionModel {
   static async getById(id) {
     const [rows] = await pool.execute(`
       SELECT 
-        gd.*,
+        gd.id,
+        gd.id_nguoi_gui,
+        gd.id_nguoi_nhan,
+        gd.id_loai_giao_dich,
+        gd.so_diem_giao_dich,
+        gd.id_giao_dich_doi_chung,
+        gd.noi_dung_giao_dich,
+        gd.trang_thai,
+        gd.created_at,
+        gd.updated_at,
         lg.ten_loai_giao_dich,
         ng.ten_zalo as ten_nguoi_gui,
         nn.ten_zalo as ten_nguoi_nhan
@@ -91,6 +101,7 @@ class TransactionModel {
         gd.so_diem_giao_dich,
         gd.id_giao_dich_doi_chung,
         gd.noi_dung_giao_dich,
+        gd.trang_thai,
         gd.created_at,
         gd.updated_at,
         lg.ten_loai_giao_dich,
@@ -163,6 +174,7 @@ class TransactionModel {
           gd.so_diem_giao_dich,
           gd.id_giao_dich_doi_chung,
           gd.noi_dung_giao_dich,
+          gd.trang_thai,
           gd.created_at,
           gd.updated_at,
           lg.ten_loai_giao_dich,
@@ -244,6 +256,15 @@ class TransactionModel {
     )
     
     return this.getById(id)
+  }
+
+  // Xóa giao dịch
+  static async delete(id, connection = null) {
+    const db = connection || pool
+    await db.execute(
+      'DELETE FROM giao_dich WHERE id = ?',
+      [id]
+    )
   }
 }
 

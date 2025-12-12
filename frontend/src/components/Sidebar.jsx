@@ -123,7 +123,7 @@ const Sidebar = ({ isAdmin = true, isCollapsed = false, onToggle, isMobileOpen =
         {/* Header */}
         <div className="h-16 flex items-center justify-between px-3 sm:px-4 border-b border-gray-200">
           {(!isCollapsed || isMobileOpen) && (
-            <h2 className="text-lg sm:text-xl font-raleway-bold text-gray-800">
+            <h2 className="text-lg sm:text-xl font-bold text-gray-800">
               Quản lý điểm
             </h2>
           )}
@@ -176,7 +176,7 @@ const Sidebar = ({ isAdmin = true, isCollapsed = false, onToggle, isMobileOpen =
                       onMobileClose()
                     }
                   }}
-                  className={`w-full flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 rounded-lg transition-all duration-200 text-sm sm:text-base font-raleway-medium ${
+                  className={`w-full flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 rounded-lg transition-all duration-200 text-sm sm:text-base font-medium ${
                     active
                       ? 'bg-primary text-white shadow-md'
                       : 'text-gray-700 hover:bg-gray-100 hover:text-primary'
@@ -208,15 +208,15 @@ const Sidebar = ({ isAdmin = true, isCollapsed = false, onToggle, isMobileOpen =
             onClick={() => setShowUserMenu(!showUserMenu)}
             className={`w-full flex items-center gap-2 sm:gap-3 px-2 py-2 rounded-lg hover:bg-gray-100 transition-colors ${(isCollapsed && !isMobileOpen) ? 'justify-center' : ''}`}
           >
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-primary flex items-center justify-center text-white text-sm sm:text-base font-raleway-semibold flex-shrink-0">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-primary flex items-center justify-center text-white text-sm sm:text-base font-semibold flex-shrink-0">
               {currentUser ? getInitials(currentUser.ten_zalo) : 'A'}
             </div>
             {(!isCollapsed || isMobileOpen) && (
               <div className="flex-1 min-w-0 text-left">
-                <p className="text-xs sm:text-sm font-raleway-semibold text-gray-800 truncate">
+                <p className="text-xs sm:text-sm font-semibold text-gray-800 truncate">
                   {currentUser?.ten_zalo || 'Admin'}
                 </p>
-                <p className="text-[10px] sm:text-xs font-raleway-regular text-gray-500 truncate">
+                <p className="text-[10px] sm:text-xs font-sans text-gray-500 truncate">
                   {currentUser?.la_admin ? 'Quản trị viên' : 'Người dùng'}
                 </p>
               </div>
@@ -238,7 +238,7 @@ const Sidebar = ({ isAdmin = true, isCollapsed = false, onToggle, isMobileOpen =
             <div className="absolute bottom-full left-0 right-0 mb-2 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden z-50">
               <button
                 onClick={handleLogout}
-                className="w-full px-4 py-3 text-left text-sm font-raleway-medium text-red-600 hover:bg-red-50 transition-colors flex items-center gap-3"
+                className="w-full px-4 py-3 text-left text-sm font-medium text-red-600 hover:bg-red-50 transition-colors flex items-center gap-3"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />

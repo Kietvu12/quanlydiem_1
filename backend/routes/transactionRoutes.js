@@ -21,5 +21,14 @@ router.post('/bulk', TransactionController.createMany)
 // Cập nhật giao dịch
 router.put('/:id', TransactionController.update)
 
+// Chốt tất cả giao dịch "Giao lịch" chưa chốt
+router.patch('/chot-tat-ca', TransactionController.chotTatCaGiaoDich)
+
+// Chốt giao dịch (chuyển từ chưa chốt sang đã chốt)
+router.patch('/:id/chot', TransactionController.chotGiaoDich)
+
+// Xóa giao dịch
+router.delete('/:id', TransactionController.delete)
+
 export default router
 
