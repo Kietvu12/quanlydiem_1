@@ -23,3 +23,6 @@ san @Anh Điệp  Thuê Xe Giang Gia 0.5
 [05/12/2025 11:39:33] Tú Vios: Tiên 13h30 6 phạm ngũ lão sedan ki10 thu 200k 0.5
 [05/12/2025 11:39:57] Vinh Đại Ca Nguyễn Ngọc Vinh: @Tú Vios Ok
 [05/12/2025 11:40:27] Tú Vios: @Vinh Đại Ca Nguyễn Ngọc Vinh ok
+
+[03/12/2025 11:53:46] Cty Xe Nội Bài  Tour2: Tiên 13h30 6 phạm ngũ lão sedan ki10 thu 200k 0.5
+[12/12/2025 20:10:04] Vận Tải Tuấn Long: @Cty Xe Nội Bài  Tour2 ok

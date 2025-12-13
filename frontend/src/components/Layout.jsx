@@ -53,7 +53,7 @@ const Layout = ({ children, isAdmin = true, showSidebar = true, onLogout }) => {
         'ml-0'
       } ${
         // Desktop: margin based on collapsed state and sidebar visibility
-        showSidebar ? (isCollapsed ? 'lg:ml-20' : 'lg:ml-64') : 'lg:ml-0'
+        showSidebar ? (isCollapsed ? 'lg:ml-20' : 'lg:ml-80') : 'lg:ml-0'
       }`}>
         <div className="p-4 sm:p-5 md:p-6">
           {children}

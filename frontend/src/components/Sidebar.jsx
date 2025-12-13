@@ -37,7 +37,7 @@ const Sidebar = ({ isAdmin = true, isCollapsed = false, onToggle, isMobileOpen =
       onLogout()
     }
     authAPI.logout()
-    navigate('/quan-ly-nguoi-dung')
+    navigate('/danh-sach-nguoi-dung')
     setShowUserMenu(false)
   }
 
@@ -50,8 +50,8 @@ const Sidebar = ({ isAdmin = true, isCollapsed = false, onToggle, isMobileOpen =
     return name.substring(0, 2).toUpperCase()
   }
 
-  // Admin menu items
-  const adminMenuItems = [
+  // Admin menu structure with sections
+  const menuSections = [
     {
       id: 'user-management',
       label: 'Quản lý người dùng',
@@ -60,7 +60,18 @@ const Sidebar = ({ isAdmin = true, isCollapsed = false, onToggle, isMobileOpen =
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
         </svg>
       ),
-      path: '/quan-ly-nguoi-dung'
+      items: [
+        {
+          id: 'user-list',
+          label: 'Danh sách người dùng',
+          path: '/danh-sach-nguoi-dung'
+        },
+        {
+          id: 'add-user',
+          label: 'Thêm mới người dùng',
+          path: '/them-moi-nguoi-dung'
+        }
+      ]
     },
     {
       id: 'transaction-management',
@@ -70,17 +81,34 @@ const Sidebar = ({ isAdmin = true, isCollapsed = false, onToggle, isMobileOpen =
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
         </svg>
       ),
-      path: '/quan-ly-giao-dich'
+      items: [
+        {
+          id: 'transaction-list',
+          label: 'Danh sách giao dịch',
+          path: '/danh-sach-giao-dich'
+        },
+        {
+          id: 'create-transaction',
+          label: 'Tạo mới giao dịch',
+          path: '/tao-moi-giao-dich'
+        }
+      ]
     },
     {
       id: 'reports',
-      label: 'Danh sách báo cáo',
+      label: 'Quản lý báo cáo',
       icon: (
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
       ),
-      path: '/danh-sach-bao-cao'
+      items: [
+        {
+          id: 'report-list',
+          label: 'Danh sách báo cáo',
+          path: '/danh-sach-bao-cao'
+        }
+      ]
     }
   ]
 
@@ -115,10 +143,10 @@ const Sidebar = ({ isAdmin = true, isCollapsed = false, onToggle, isMobileOpen =
       {/* Sidebar */}
       <div className={`bg-white shadow-lg h-screen fixed left-0 top-0 transition-all duration-300 z-50 ${
         // Mobile: slide in/out
-        isMobileOpen ? 'w-64' : '-translate-x-full lg:translate-x-0'
+        isMobileOpen ? 'w-80' : '-translate-x-full lg:translate-x-0'
       } ${
         // Desktop: collapse/expand
-        isCollapsed ? 'lg:w-20' : 'lg:w-64'
+        isCollapsed ? 'lg:w-20' : 'lg:w-80'
       }`}>
         {/* Header */}
         <div className="h-16 flex items-center justify-between px-3 sm:px-4 border-b border-gray-200">
@@ -164,39 +192,93 @@ const Sidebar = ({ isAdmin = true, isCollapsed = false, onToggle, isMobileOpen =
       {/* Menu Items */}
       <nav className="mt-4 sm:mt-6 px-2 sm:px-3">
         <ul className="space-y-1 sm:space-y-2">
-          {adminMenuItems.map((item) => {
-            const active = isActive(item.path)
-            return (
-              <li key={item.id}>
-                <button
-                  onClick={() => {
-                    handleMenuClick(item.path)
-                    // Close mobile sidebar when clicking a menu item
-                    if (onMobileClose) {
-                      onMobileClose()
-                    }
-                  }}
-                  className={`w-full flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 rounded-lg transition-all duration-200 text-sm sm:text-base font-medium ${
-                    active
-                      ? 'bg-primary text-white shadow-md'
-                      : 'text-gray-700 hover:bg-gray-100 hover:text-primary'
-                  }`}
-                  title={(isCollapsed && !isMobileOpen) ? item.label : ''}
-                >
-                  <span className={`flex-shrink-0 w-5 h-5 sm:w-6 sm:h-6 ${active ? 'text-white' : 'text-gray-600'}`}>
-                    {item.icon}
-                  </span>
+          {menuSections.map((section) => {
+            // Check if section has sub-items (user management) or is a single item
+            if (section.items) {
+              // Section with sub-items
+              const isSectionActive = section.items.some(item => isActive(item.path))
+              return (
+                <li key={section.id} className="space-y-1">
+                  {/* Section Header */}
                   {(!isCollapsed || isMobileOpen) && (
-                    <span className="flex-1 text-left">
-                      {item.label}
+                    <div className="px-3 sm:px-4 py-2 text-sm sm:text-base font-bold text-gray-700 uppercase tracking-wider">
+                      {section.label}
+                    </div>
+                  )}
+                  {/* Sub-items */}
+                  <ul className="space-y-1">
+                    {section.items.map((item) => {
+                      const active = isActive(item.path)
+                      return (
+                        <li key={item.id}>
+                          <button
+                            onClick={() => {
+                              handleMenuClick(item.path)
+                              // Close mobile sidebar when clicking a menu item
+                              if (onMobileClose) {
+                                onMobileClose()
+                              }
+                            }}
+                            className={`w-full flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 rounded-lg transition-all duration-200 text-base sm:text-lg font-bold ${
+                              active
+                                ? 'bg-primary text-white shadow-md'
+                                : 'text-gray-700 hover:bg-gray-100 hover:text-primary'
+                            }`}
+                            title={(isCollapsed && !isMobileOpen) ? item.label : ''}
+                          >
+                            {(!isCollapsed || isMobileOpen) && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
+                            )}
+                            {(!isCollapsed || isMobileOpen) && (
+                              <span className="flex-1 text-left">
+                                {item.label}
+                              </span>
+                            )}
+                            {active && (!isCollapsed || isMobileOpen) && (
+                              <span className="w-1.5 h-1.5 bg-white rounded-full"></span>
+                            )}
+                          </button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </li>
+              )
+            } else {
+              // Single menu item
+              const active = isActive(section.path)
+              return (
+                <li key={section.id}>
+                  <button
+                    onClick={() => {
+                      handleMenuClick(section.path)
+                      // Close mobile sidebar when clicking a menu item
+                      if (onMobileClose) {
+                        onMobileClose()
+                      }
+                    }}
+                    className={`w-full flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 rounded-lg transition-all duration-200 text-base sm:text-lg font-bold ${
+                      active
+                        ? 'bg-primary text-white shadow-md'
+                        : 'text-gray-700 hover:bg-gray-100 hover:text-primary'
+                    }`}
+                    title={(isCollapsed && !isMobileOpen) ? section.label : ''}
+                  >
+                    <span className={`flex-shrink-0 w-5 h-5 sm:w-6 sm:h-6 ${active ? 'text-white' : 'text-gray-600'}`}>
+                      {section.icon}
                     </span>
-                  )}
-                  {active && (!isCollapsed || isMobileOpen) && (
-                    <span className="w-1.5 h-1.5 bg-white rounded-full"></span>
-                  )}
-                </button>
-              </li>
-            )
+                    {(!isCollapsed || isMobileOpen) && (
+                      <span className="flex-1 text-left">
+                        {section.label}
+                      </span>
+                    )}
+                    {active && (!isCollapsed || isMobileOpen) && (
+                      <span className="w-1.5 h-1.5 bg-white rounded-full"></span>
+                    )}
+                  </button>
+                </li>
+              )
+            }
           })}
         </ul>
       </nav>

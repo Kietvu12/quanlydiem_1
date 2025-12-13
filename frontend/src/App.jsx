@@ -3,7 +3,10 @@ import { useState, useEffect } from 'react'
 import Login from './page/Login'
 import Layout from './components/Layout'
 import QuanLyNguoiDung from './page/Admin/QuanLyNguoiDung'
-import QuanLyGiaoDich from './page/Admin/QuanLyGiaoDich'
+import DanhSachNguoiDung from './page/Admin/DanhSachNguoiDung'
+import ThemMoiNguoiDung from './page/Admin/ThemMoiNguoiDung'
+import DanhSachGiaoDich from './page/Admin/DanhSachGiaoDich'
+import TaoMoiGiaoDich from './page/Admin/TaoMoiGiaoDich'
 import DanhSachBaoCao from './page/Admin/DanhSachBaoCao'
 import { authAPI } from './service/api'
 
@@ -68,30 +71,75 @@ function App() {
           path="/login" 
           element={
             isAuthenticated ? (
-              <Navigate to="/quan-ly-giao-dich" replace />
+              <Navigate to="/danh-sach-giao-dich" replace />
             ) : (
               <Login onLogin={handleLogin} />
             )
           } 
         />
 
-        {/* Public Route - Quản lý người dùng (có thể xem khi chưa đăng nhập) */}
+        {/* Public Route - Quản lý người dùng (có thể xem khi chưa đăng nhập) - Redirect về danh sách */}
         <Route
           path="/quan-ly-nguoi-dung"
           element={
+            <Navigate to="/danh-sach-nguoi-dung" replace />
+          }
+        />
+        
+        {/* Public Route - Danh sách người dùng (có thể xem khi chưa đăng nhập) */}
+        <Route
+          path="/danh-sach-nguoi-dung"
+          element={
             <Layout isAdmin={isAuthenticated && isAdmin} showSidebar={isAuthenticated && isAdmin} onLogout={handleLogout}>
-              <QuanLyNguoiDung isAuthenticated={isAuthenticated} isAdmin={isAdmin} onLogout={handleLogout} />
+              <DanhSachNguoiDung isAuthenticated={isAuthenticated} isAdmin={isAdmin} onLogout={handleLogout} />
             </Layout>
           }
         />
         
+        {/* Protected Route - Thêm mới người dùng (chỉ admin) */}
+        <Route
+          path="/them-moi-nguoi-dung"
+          element={
+            isAuthenticated && isAdmin ? (
+              <Layout isAdmin={isAdmin} showSidebar={isAdmin} onLogout={handleLogout}>
+                <ThemMoiNguoiDung isAuthenticated={isAuthenticated} isAdmin={isAdmin} />
+              </Layout>
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+        
         {/* Protected Routes - Admin */}
+        {/* Route cũ - redirect về danh sách */}
         <Route
           path="/quan-ly-giao-dich"
           element={
+            <Navigate to="/danh-sach-giao-dich" replace />
+          }
+        />
+        
+        {/* Danh sách giao dịch */}
+        <Route
+          path="/danh-sach-giao-dich"
+          element={
             isAuthenticated && isAdmin ? (
               <Layout isAdmin={isAdmin}>
-                <QuanLyGiaoDich />
+                <DanhSachGiaoDich />
+              </Layout>
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+        
+        {/* Tạo mới giao dịch */}
+        <Route
+          path="/tao-moi-giao-dich"
+          element={
+            isAuthenticated && isAdmin ? (
+              <Layout isAdmin={isAdmin}>
+                <TaoMoiGiaoDich />
               </Layout>
             ) : (
               <Navigate to="/login" replace />
@@ -123,7 +171,7 @@ function App() {
                 </div>
               </div>
             ) : (
-              <Navigate to="/quan-ly-nguoi-dung" replace />
+              <Navigate to="/danh-sach-nguoi-dung" replace />
             )
           } 
         />
